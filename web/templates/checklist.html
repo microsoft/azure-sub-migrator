@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% block title %}Migration Checklist – Tenova{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.scan_status', task_id=task_id) }}">Scan {{ task_id }}</a></li>
+    <li class="breadcrumb-item active">Migration Checklist</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3><i class="bi bi-list-check me-2"></i>Migration Checklist</h3>
+  <span class="text-body-secondary">Subscription: <code>{{ subscription_id }}</code></span>
+</div>
+
+<!-- Progress bar -->
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between mb-1">
+      <span class="fw-semibold">Overall Progress</span>
+      <span id="progress-text" class="text-body-secondary">0 / 0 completed</span>
+    </div>
+    <div class="progress" style="height: 24px;">
+      <div id="progress-bar" class="progress-bar bg-success progress-bar-striped"
+           role="progressbar" style="width: 0%;">0%</div>
+    </div>
+  </div>
+</div>
+
+<!-- Phase 1: Pre-Transfer -->
+<div class="card shadow-sm mb-4 border-danger">
+  <div class="card-header bg-danger bg-opacity-10 fw-semibold">
+    <i class="bi bi-1-circle me-2"></i>Phase 1: Pre-Transfer Actions
+    <span class="badge bg-danger float-end" id="pre-count-badge">0</span>
+  </div>
+  <div class="card-body p-0">
+    <!-- General pre-transfer items (always shown) -->
+    <ul class="list-group list-group-flush" id="pre-general-list">
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="rbac-export">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Export RBAC role assignments and custom roles</strong>
+          <div class="text-body-secondary small">All role assignments and custom roles are permanently deleted during transfer. Run <code>tenova export-rbac</code> or use the Export RBAC button on the dashboard.</div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="rbac-review">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Map source principals to target tenant principals</strong>
+          <div class="text-body-secondary small">Create a principal mapping JSON file that maps old user/group/SP object IDs to their equivalents in the target tenant.</div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="backup-keyvault">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Back up Key Vault secrets, certificates, and keys</strong>
+          <div class="text-body-secondary small">Key Vault access policies are wiped during transfer. Export secrets and certificate references before proceeding.</div>
+        </div>
+      </li>
+    </ul>
+    <!-- Resource-specific pre-transfer items -->
+    <ul class="list-group list-group-flush" id="pre-resource-list"></ul>
+  </div>
+</div>
+
+<!-- Phase 2: Transfer -->
+<div class="card shadow-sm mb-4 border-primary">
+  <div class="card-header bg-primary bg-opacity-10 fw-semibold">
+    <i class="bi bi-2-circle me-2"></i>Phase 2: Execute Transfer
+  </div>
+  <div class="card-body p-0">
+    <ul class="list-group list-group-flush">
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="verify-readiness">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Verify readiness check passes (no blockers)</strong>
+          <div class="text-body-secondary small">Run <code>tenova readiness-check</code> or use the Readiness Check on the dashboard. All blockers must be resolved.</div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="schedule-downtime">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Schedule maintenance window and notify stakeholders</strong>
+          <div class="text-body-secondary small">Subscription transfer requires downtime. Ensure all teams are aware and a rollback plan is in place.</div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="execute-transfer">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Transfer the subscription to the target tenant</strong>
+          <div class="text-body-secondary small">Use Azure Portal → Subscriptions → Change directory, or run <code>tenova transfer</code>.</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<!-- Phase 3: Post-Transfer -->
+<div class="card shadow-sm mb-4 border-warning">
+  <div class="card-header bg-warning bg-opacity-10 fw-semibold">
+    <i class="bi bi-3-circle me-2"></i>Phase 3: Post-Transfer Actions
+    <span class="badge bg-warning text-dark float-end" id="post-count-badge">0</span>
+  </div>
+  <div class="card-body p-0">
+    <!-- General post-transfer items -->
+    <ul class="list-group list-group-flush" id="post-general-list">
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="import-rbac">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Import RBAC role assignments and custom roles</strong>
+          <div class="text-body-secondary small">Run <code>tenova import-rbac</code> with the exported file and principal mapping.</div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="fix-sami">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Disable and re-enable system-assigned managed identities</strong>
+          <div class="text-body-secondary small">All system-assigned managed identities are broken after transfer. Disable and re-enable on each resource.</div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="rotate-keys">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Rotate storage account access keys and SAS tokens</strong>
+          <div class="text-body-secondary small">Source tenant users may still have access via access keys. Rotate all keys to revoke access.</div>
+        </div>
+      </li>
+    </ul>
+    <!-- Resource-specific post-transfer items -->
+    <ul class="list-group list-group-flush" id="post-resource-list"></ul>
+  </div>
+</div>
+
+<!-- Phase 4: Validation -->
+<div class="card shadow-sm mb-4 border-success">
+  <div class="card-header bg-success bg-opacity-10 fw-semibold">
+    <i class="bi bi-4-circle me-2"></i>Phase 4: Validation
+  </div>
+  <div class="card-body p-0">
+    <ul class="list-group list-group-flush">
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="validate-services">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Validate all services are working in the target tenant</strong>
+          <div class="text-body-secondary small">Test application endpoints, verify database connectivity, check Key Vault access, and validate managed identity operations.</div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="rescan">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Run a follow-up scan in the target tenant</strong>
+          <div class="text-body-secondary small">Perform another scan to confirm all impacted resources have been remediated.</div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="close-window">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div>
+          <strong>Close maintenance window and notify stakeholders</strong>
+          <div class="text-body-secondary small">Confirm migration is complete and services are operational.</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<!-- Reset button -->
+<div class="text-end mb-4">
+  <button id="reset-btn" class="btn btn-outline-danger btn-sm">
+    <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Checklist
+  </button>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  const STORAGE_KEY = 'migration_checklist_{{ task_id }}';
+  const scanData = {{ scan_data | tojson }};
+
+  // ── Build resource-specific checklist items ──────────────────────
+  function buildResourceItems() {
+    const preList = document.getElementById('pre-resource-list');
+    const postList = document.getElementById('post-resource-list');
+    let preCount = 0, postCount = 0;
+
+    (scanData.requires_action || []).forEach((r, idx) => {
+      const timing = (r.timing || 'post').toLowerCase();
+      const pre = r.pre_action || '';
+      const post = r.post_action || '';
+      const docUrl = r.doc_url || '';
+      const docLink = docUrl
+        ? ` <a href="${esc(docUrl)}" target="_blank" class="text-info small">[Docs]</a>`
+        : '';
+
+      if ((timing === 'pre' || timing === 'both') && pre) {
+        preCount++;
+        preList.insertAdjacentHTML('beforeend', `
+          <li class="list-group-item d-flex align-items-start gap-3" data-item="pre-resource-${idx}">
+            <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+            <div>
+              <strong>${esc(r.name)}</strong> <code class="small">${esc(r.type)}</code>${docLink}
+              <div class="text-body-secondary small">${esc(pre)}</div>
+            </div>
+          </li>`);
+      }
+
+      if ((timing === 'post' || timing === 'both') && post) {
+        postCount++;
+        postList.insertAdjacentHTML('beforeend', `
+          <li class="list-group-item d-flex align-items-start gap-3" data-item="post-resource-${idx}">
+            <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+            <div>
+              <strong>${esc(r.name)}</strong> <code class="small">${esc(r.type)}</code>${docLink}
+              <div class="text-body-secondary small">${esc(post)}</div>
+            </div>
+          </li>`);
+      }
+    });
+
+    document.getElementById('pre-count-badge').textContent = preCount + 3; // +3 for general items
+    document.getElementById('post-count-badge').textContent = postCount + 3;
+  }
+
+  // ── LocalStorage persistence ────────────────────────────────────
+  function loadState() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    } catch { return {}; }
+  }
+
+  function saveState(state) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function applyState() {
+    const state = loadState();
+    document.querySelectorAll('.checklist-check').forEach(cb => {
+      const item = cb.closest('[data-item]');
+      if (item && state[item.dataset.item]) {
+        cb.checked = true;
+        item.classList.add('opacity-50');
+      }
+    });
+    updateProgress();
+  }
+
+  function updateProgress() {
+    const all = document.querySelectorAll('.checklist-check');
+    const checked = document.querySelectorAll('.checklist-check:checked');
+    const total = all.length;
+    const done = checked.length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+
+    document.getElementById('progress-text').textContent = `${done} / ${total} completed`;
+    const bar = document.getElementById('progress-bar');
+    bar.style.width = pct + '%';
+    bar.textContent = pct + '%';
+
+    if (pct === 100) {
+      bar.classList.remove('progress-bar-striped');
+      bar.classList.add('bg-success');
+    } else if (pct >= 50) {
+      bar.classList.add('progress-bar-striped');
+      bar.classList.remove('bg-warning');
+    }
+  }
+
+  // ── Event listeners ─────────────────────────────────────────────
+  document.addEventListener('change', e => {
+    if (!e.target.classList.contains('checklist-check')) return;
+    const item = e.target.closest('[data-item]');
+    if (!item) return;
+
+    const state = loadState();
+    if (e.target.checked) {
+      state[item.dataset.item] = true;
+      item.classList.add('opacity-50');
+    } else {
+      delete state[item.dataset.item];
+      item.classList.remove('opacity-50');
+    }
+    saveState(state);
+    updateProgress();
+  });
+
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    if (!confirm('Reset all checklist progress? This cannot be undone.')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    document.querySelectorAll('.checklist-check').forEach(cb => {
+      cb.checked = false;
+      cb.closest('[data-item]')?.classList.remove('opacity-50');
+    });
+    updateProgress();
+  });
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+
+  // ── Init ────────────────────────────────────────────────────────
+  buildResourceItems();
+  applyState();
+})();
+</script>
+{% endblock %}

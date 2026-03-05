@@ -1,0 +1,31 @@
+# Sample configuration for tenova
+# Copy this file to config.yaml and fill in your values.
+
+# Source tenant (the tenant you're migrating FROM)
+source_tenant_id: "00000000-0000-0000-0000-000000000001"
+
+# Target tenant (the tenant you're migrating TO)
+target_tenant_id: "00000000-0000-0000-0000-000000000002"
+
+# Subscription to migrate
+subscription_id: "00000000-0000-0000-0000-000000000003"
+
+# Authentication method: cli | service_principal | managed_identity | default
+auth_method: "cli"
+
+# Service principal credentials (only needed if auth_method is service_principal)
+# client_id: ""
+# client_secret: ""
+
+# IaC export formats to generate: arm, bicep, terraform
+iac_formats:
+  - arm
+  - bicep
+  - terraform
+
+# Output directory for migration artifacts
+output_dir: "migration_output"
+
+# Safety flags
+dry_run: false
+skip_transfer: false

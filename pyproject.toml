@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tenova"
+version = "0.1.0"
+description = "Tenova – Azure Tenant-to-Tenant Migration Tool"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [
+    { name = "LearnAzureWithMo", email = "noreply@example.com" },
+]
+keywords = ["azure", "migration", "tenant", "entra", "azure-ad"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "click>=8.1",
+    "azure-identity>=1.15",
+    "azure-mgmt-resource>=23.0",
+    "azure-mgmt-resourcegraph>=8.0",
+    "azure-mgmt-authorization>=4.0",
+    "azure-mgmt-subscription>=3.0",
+    "azure-mgmt-keyvault>=10.0",
+    "azure-mgmt-msi>=7.0",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "flask>=3.0",
+    "msal>=1.28",
+    "gunicorn>=21.2",
+    "fpdf2>=2.7",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.0",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+
+[project.scripts]
+tenova = "tenova.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/learnazurewithmo/tenova"
+Issues = "https://github.com/learnazurewithmo/tenova/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true

@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}Scan Results – Tenova{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Scan {{ task_id }}</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3><i class="bi bi-clipboard-data me-2"></i>Scan Results</h3>
+  <span class="text-body-secondary">Subscription: <code>{{ subscription_id }}</code></span>
+</div>
+
+<!-- Status banner (replaced dynamically when scan completes) -->
+<div id="status-banner">
+  {% if task.status.value == 'pending' or task.status.value == 'running' %}
+  <div class="alert alert-info d-flex align-items-center" role="alert">
+    <div class="spinner-border spinner-border-sm me-3" role="status"></div>
+    <div>
+      Scan is <strong>{{ task.status.value }}</strong>… This page will refresh automatically.
+    </div>
+  </div>
+  {% elif task.status.value == 'failed' %}
+  <div class="alert alert-danger">
+    <i class="bi bi-x-circle me-2"></i>Scan failed: {{ task.error }}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Summary cards (hidden until scan completes) -->
+<div id="summary-cards" class="row g-3 mb-4" style="display:none;">
+  <div class="col-md-4">
+    <div class="card text-bg-primary shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="card-subtitle mb-1 opacity-75">Total Resources</h6>
+        <h2 class="card-title mb-0" id="total-count">—</h2>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-bg-success shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="card-subtitle mb-1 opacity-75">Transfer-Safe</h6>
+        <h2 class="card-title mb-0" id="transfer-safe-count">—</h2>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-bg-warning shadow-sm h-100">
+      <div class="card-body">
+        <h6 class="card-subtitle mb-1 opacity-75">Requires Action</h6>
+        <h2 class="card-title mb-0" id="requires-action-count">—</h2>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Info note -->
+<div id="info-note" class="alert alert-info small" style="display:none;">
+  <i class="bi bi-info-circle me-1"></i>
+  <strong>All resources transfer</strong> with the subscription.
+  <em>Requires Action</em> resources have tenant-bound dependencies that need preparation
+  <strong>before</strong> the transfer (🔴 PRE) and/or reconfiguration <strong>after</strong> (🟡 POST).
+  Items marked ⛔/⚠️ are critical — failing to act before transfer may cause data loss or block the transfer entirely.
+  <a href="https://learn.microsoft.com/en-us/azure/role-based-access-control/transfer-subscription" target="_blank">Learn more</a>
+</div>
+
+<!-- Tabs for transfer-safe / requires-action tables -->
+<div id="result-tables" style="display:none;">
+  <ul class="nav nav-tabs" role="tablist">
+    <li class="nav-item">
+      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#transferSafeTab">
+        <i class="bi bi-check-circle text-success me-1"></i>Transfer-Safe
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#requiresActionTab">
+        <i class="bi bi-exclamation-triangle text-warning me-1"></i>Requires Action
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content border border-top-0 rounded-bottom p-3">
+    <!-- Transfer-Safe -->
+    <div class="tab-pane fade show active" id="transferSafeTab">
+      <table class="table table-sm table-hover" id="transferSafeTable">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Resource Group</th>
+            <th>Location</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <!-- Requires Action -->
+    <div class="tab-pane fade" id="requiresActionTab">
+      <table class="table table-sm table-hover" id="requiresActionTable">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Resource Group</th>
+            <th>Timing</th>
+            <th>Pre-Transfer Action</th>
+            <th>Post-Transfer Action</th>
+            <th>MS Learn</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Action buttons -->
+  <div class="text-end mt-3">
+    <a id="checklist-link" href="{{ url_for('main.checklist', task_id=task_id) }}" class="btn btn-outline-success me-2">
+      <i class="bi bi-list-check me-1"></i>Migration Checklist
+    </a>
+    <div class="btn-group me-2" role="group">
+      <a id="download-pdf" href="{{ url_for('main.export_pdf', task_id=task_id) }}" class="btn btn-outline-danger">
+        <i class="bi bi-file-earmark-pdf me-1"></i>PDF Report
+      </a>
+      <a id="download-excel" href="{{ url_for('main.export_excel', task_id=task_id) }}" class="btn btn-outline-success">
+        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Excel Report
+      </a>
+    </div>
+    <a id="download-plan" href="#" class="btn btn-outline-primary">
+      <i class="bi bi-download me-1"></i>JSON
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  const TASK_ID = "{{ task_id }}";
+  const POLL_URL = "{{ url_for('main.api_task_status', task_id=task_id) }}";
+  const PLAN_URL = "{{ url_for('main.migration_plan', task_id=task_id) }}";
+  let polling = null;
+
+  function renderResults(data) {
+    // Summary cards
+    document.getElementById('total-count').textContent = data.transfer_safe_count + data.requires_action_count;
+    document.getElementById('transfer-safe-count').textContent = data.transfer_safe_count;
+    document.getElementById('requires-action-count').textContent = data.requires_action_count;
+    document.getElementById('summary-cards').style.display = '';
+    document.getElementById('info-note').style.display = '';
+
+    // Transfer-safe table
+    const safeBody = document.querySelector('#transferSafeTable tbody');
+    safeBody.innerHTML = '';
+    (data.transfer_safe || []).forEach(r => {
+      safeBody.insertAdjacentHTML('beforeend', `<tr>
+        <td>${esc(r.name)}</td><td><code>${esc(r.type)}</code></td>
+        <td>${esc(r.resource_group)}</td><td>${esc(r.location)}</td></tr>`);
+    });
+
+    // Requires-action table
+    const actBody = document.querySelector('#requiresActionTable tbody');
+    actBody.innerHTML = '';
+    (data.requires_action || []).forEach(r => {
+      const timing = (r.timing || 'post').toUpperCase();
+      let timingBadge = '';
+      if (timing === 'PRE') {
+        timingBadge = '<span class="badge bg-danger">PRE</span>';
+      } else if (timing === 'POST') {
+        timingBadge = '<span class="badge bg-warning text-dark">POST</span>';
+      } else {
+        timingBadge = '<span class="badge bg-danger me-1">PRE</span><span class="badge bg-warning text-dark">POST</span>';
+      }
+      const docUrl = r.doc_url || '';
+      const docLink = docUrl
+        ? `<a href="${esc(docUrl)}" target="_blank" class="btn btn-sm btn-outline-info"><i class="bi bi-box-arrow-up-right me-1"></i>Docs</a>`
+        : '—';
+      actBody.insertAdjacentHTML('beforeend', `<tr>
+        <td>${esc(r.name)}</td><td><code>${esc(r.type)}</code></td>
+        <td>${esc(r.resource_group)}</td>
+        <td>${timingBadge}</td>
+        <td class="small">${esc(r.pre_action || '—')}</td>
+        <td class="small">${esc(r.post_action || '—')}</td>
+        <td>${docLink}</td></tr>`);
+    });
+
+    // Init DataTables
+    $('#transferSafeTable').DataTable({ pageLength: 25 });
+    $('#requiresActionTable').DataTable({ pageLength: 25 });
+
+    document.getElementById('result-tables').style.display = '';
+    document.getElementById('download-plan').href = PLAN_URL;
+  }
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+
+  function poll() {
+    fetch(POLL_URL).then(r => r.json()).then(data => {
+      if (data.status === 'completed') {
+        clearInterval(polling);
+        document.getElementById('status-banner').innerHTML =
+          '<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>Scan completed!</div>';
+        renderResults(data);
+      } else if (data.status === 'failed') {
+        clearInterval(polling);
+        document.getElementById('status-banner').innerHTML =
+          `<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>Scan failed: ${esc(data.error)}</div>`;
+      }
+    }).catch(err => console.error('Poll error', err));
+  }
+
+  // If scan already done on page load (e.g. refresh), render immediately
+  {% if task.status.value == 'completed' and task.result %}
+    renderResults({{ task.result | tojson }});
+    document.getElementById('status-banner').innerHTML =
+      '<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>Scan completed!</div>';
+  {% elif task.status.value != 'failed' %}
+    polling = setInterval(poll, 3000);
+    poll();
+  {% endif %}
+})();
+</script>
+{% endblock %}
