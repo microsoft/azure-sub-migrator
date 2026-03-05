@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 def create_app() -> Flask:
@@ -15,6 +16,10 @@ def create_app() -> Flask:
         template_folder=str(Path(__file__).parent / "templates"),
         static_folder=str(Path(__file__).parent / "static"),
     )
+
+    # Trust Azure App Service reverse-proxy headers so
+    # request.url_root uses https:// instead of http://
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
     # ── Configuration ────────────────────────────────────────────────
     app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")

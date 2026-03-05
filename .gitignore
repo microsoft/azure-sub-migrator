@@ -35,3 +35,5 @@ htmlcov/
 .env
 *.pem
 *.key
+docs/
+.azure/

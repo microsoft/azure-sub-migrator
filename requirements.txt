@@ -9,6 +9,10 @@ azure-mgmt-msi>=7.0
 rich>=13.0
 pyyaml>=6.0
 
+# Reports
+fpdf2>=2.7
+openpyxl>=3.1
+
 # Web UI
 flask>=3.0
 msal>=1.28
