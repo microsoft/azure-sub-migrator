@@ -65,7 +65,13 @@ def login_required(f: Callable) -> Callable:
 
 
 def get_access_token() -> str | None:
-    """Return a valid ARM access token from the session, or None."""
+    """Return a valid ARM access token, refreshing silently if needed."""
+    # Try silent refresh first — handles expired tokens automatically
+    refreshed = _get_token_from_cache()
+    if refreshed:
+        session["access_token"] = refreshed["access_token"]
+        return refreshed["access_token"]
+    # Fallback to whatever is in the session (may be expired)
     return session.get("access_token")
 
 

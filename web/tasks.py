@@ -8,6 +8,7 @@ keyed by a task ID.
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -54,7 +55,9 @@ class _StaticTokenCredential(TokenCredential):
         self._token = token
 
     def get_token(self, *scopes: str, **kwargs: Any) -> AccessToken:
-        return AccessToken(self._token, 0)
+        # Set expiry 55 min from now so the SDK treats the token as valid
+        # and doesn't re-invoke get_token() on every single API call.
+        return AccessToken(self._token, int(time.time()) + 3300)
 
 
 def _credential_from_token(access_token: str) -> TokenCredential:

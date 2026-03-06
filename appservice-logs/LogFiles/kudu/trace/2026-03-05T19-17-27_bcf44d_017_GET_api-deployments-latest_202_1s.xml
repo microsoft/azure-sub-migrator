@@ -1,0 +1,9 @@
+<step title="Incoming Request" date="2026-03-05T19:17:27.931" instance="bcf44d" url="/api/deployments/latest" method="GET" type="request" pid="770,1,5" Accept="*/*" Host="tenova-app.scm.azurewebsites.net" User-Agent="AZURECLI/2.69.0 (MSI)" Accept-Encoding="gzip, deflate" Authorization="Bea..." x-ms-client-request-id="e4d88dba-18c7-11f1-9992-6ca100027c31" X-ARR-LOG-ID="e4d88dba-18c7-11f1-9992-6ca100027c31" CLIENT-IP="4.194.122.162:37024" X-SITE-DEPLOYMENT-ID="tenova-app" WAS-DEFAULT-HOSTNAME="tenova-app.scm.azurewebsites.net" X-Forwarded-Proto="https" X-AppService-Proto="https" X-Forwarded-TlsVersion="1.3" X-WAWS-Unencoded-URL="/api/deployments/latest" X-Client-IP="4.194.122.162" X-Client-Port="37024" >
+  <step title="Cleanup Xml Logs" date="2026-03-05T19:17:27.949" /><!-- duration: 21ms -->
+  <step title="DeploymentService.GetResult" date="2026-03-05T19:17:28.031" >
+    <step title="DeploymentService.GetLatestDeployment" date="2026-03-05T19:17:28.061" >
+      <step title="DeploymentManager.GetResults" date="2026-03-05T19:17:28.089" /><!-- duration: 961ms -->
+    </step><!-- duration: 1007ms -->
+  </step><!-- duration: 1058ms -->
+  <step title="Outgoing response" date="2026-03-05T19:17:29.221" type="response" statusCode="202" statusText="Accepted" /><!-- duration: 59ms -->
+</step><!-- duration: 1399ms -->

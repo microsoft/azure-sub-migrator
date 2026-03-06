@@ -1,0 +1,97 @@
+2026-03-05T19:12:25.4142471Z State: Starting, Action: EstablishingSiteNetworks, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: , DetailsLevel: INFO
+2026-03-05T19:12:28.2913595Z State: Starting, Action: StartingSiteContainers, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: , DetailsLevel: INFO
+2026-03-05T19:12:28.2919244Z Container start method called.
+2026-03-05T19:12:28.2922813Z State: Starting, Action: PullingImage, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Pulling image 10.1.0.6:13209/appsvc/python:3.12_20260203.2.tuxprod for tenova-app., DetailsLevel: INFO
+2026-03-05T19:12:28.3107649Z Establishing network.
+2026-03-05T19:12:28.3117623Z Pulling image: appsvc/python:3.12_20260203.2.tuxprod.
+2026-03-05T19:12:32.0434479Z Container is starting.
+2026-03-05T19:12:32.0723600Z State: Starting, Action: MountingVolumes, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Mounting volumes for tenova-app., DetailsLevel: INFO
+2026-03-05T19:12:32.0728158Z Establishing user namespace if not established already.
+2026-03-05T19:12:32.0730088Z Establishing network if not established already.
+2026-03-05T19:12:32.0744497Z Mounting volumes.
+2026-03-05T19:12:32.0749229Z Nested mountpoint 
+2026-03-05T19:12:32.1557959Z Nested mountpoint volatile/logs
+2026-03-05T19:12:32.1856292Z Nested mountpoint 
+2026-03-05T19:12:32.3347779Z Nested mountpoint 
+2026-03-05T19:12:32.5362458Z Nested mountpoint 
+2026-03-05T19:12:33.0818029Z State: Starting, Action: CreatingContainer, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Finished pulling container image and mounting volumes for tenova-app. Allocatinng the rest of the container resources to finish container creation., DetailsLevel: INFO
+2026-03-05T19:12:33.0893614Z Creating container.
+2026-03-05T19:12:33.0900468Z Creating pipes for streaming container io.
+2026-03-05T19:12:33.0901874Z Creating stdout named pipe at /podr/container/pipe/cc0b1f760d3b_tenova-app/stdout_571ecfcd07c94bc2b75a58d266e6e4d1.
+2026-03-05T19:12:33.1199993Z Successfully created stdout named pipe at: /podr/container/pipe/cc0b1f760d3b_tenova-app/stdout_571ecfcd07c94bc2b75a58d266e6e4d1.
+2026-03-05T19:12:33.1209794Z Opening named pipe /podr/container/pipe/cc0b1f760d3b_tenova-app/stdout_571ecfcd07c94bc2b75a58d266e6e4d1 for reading in non-blocking mode.
+2026-03-05T19:12:33.1301464Z Successfully opened named pipe: /podr/container/pipe/cc0b1f760d3b_tenova-app/stdout_571ecfcd07c94bc2b75a58d266e6e4d1.
+2026-03-05T19:12:33.1317205Z Successfully removed non-blocking flag from /podr/container/pipe/cc0b1f760d3b_tenova-app/stdout_571ecfcd07c94bc2b75a58d266e6e4d1.
+2026-03-05T19:12:33.1707475Z Creating stderr named pipe at /podr/container/pipe/cc0b1f760d3b_tenova-app/stderr_b1850ab16df243dea2f27cffbf379c1f.
+2026-03-05T19:12:33.1719633Z Successfully created stderr named pipe at: /podr/container/pipe/cc0b1f760d3b_tenova-app/stderr_b1850ab16df243dea2f27cffbf379c1f.
+2026-03-05T19:12:33.1922194Z Opening named pipe /podr/container/pipe/cc0b1f760d3b_tenova-app/stderr_b1850ab16df243dea2f27cffbf379c1f for reading in non-blocking mode.
+2026-03-05T19:12:33.2203078Z Successfully opened named pipe: /podr/container/pipe/cc0b1f760d3b_tenova-app/stderr_b1850ab16df243dea2f27cffbf379c1f.
+2026-03-05T19:12:33.2204960Z Successfully removed non-blocking flag from /podr/container/pipe/cc0b1f760d3b_tenova-app/stderr_b1850ab16df243dea2f27cffbf379c1f.
+2026-03-05T19:12:33.2215573Z Creating container with image: appsvc/python:3.12_20260203.2.tuxprod from registry: mcr.microsoft.com and fully qualified image name: mcr.microsoft.com/appsvc/python:3.12_20260203.2.tuxprod
+2026-03-05T19:12:33.8598599Z Starting container: cc0b1f760d3b_tenova-app.
+2026-03-05T19:12:33.9579086Z Starting watchers and probes.
+2026-03-05T19:12:33.9772282Z Starting metrics collection.
+2026-03-05T19:12:33.9774795Z Container is running.
+2026-03-05T19:12:33.9775960Z State: Starting, Action: CreatingContainer, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Container tenova-app successfully created and is running., DetailsLevel: INFO
+2026-03-05T19:12:34.2481625Z Container start method finished after 5955 ms.
+2026-03-05T19:12:34.2699869Z State: Starting, Action: InitiatingSiteWarmUpProbe, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Container tenova-app successfully created and is running., DetailsLevel: INFO
+2026-03-05T19:12:34.3082638Z State: Starting, Action: WaitingForSiteWarmUpProbeSuccess, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Pinging warmup path to ensure container is ready to receive requests., DetailsLevel: INFO
+2026-03-05T19:13:48.5430435Z Site startup probe succeeded after 74.2325847 seconds.
+2026-03-05T19:13:48.8530358Z State: Starting, Action: WarmUpProbeSucceeded, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Site startup probe succeeded after 74.2325847 seconds., DetailsLevel: INFO
+2026-03-05T19:13:49.2055476Z Site is running with deployment version: 9fbe5886-b478-40ac-a489-afad51dcdc59
+2026-03-05T19:13:49.2158264Z Site started.
+2026-03-05T19:13:49.2167321Z State: Started, Action: None, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Site started at 03/05/2026 19:13:49 (UTC), DetailsLevel: INFO
+2026-03-05T19:13:49.4174098Z Site is running with patch version PYTHON 3.12.12
+2026-03-05T19:19:08.5983705Z State: Starting, Action: EstablishingSiteNetworks, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: , DetailsLevel: INFO
+2026-03-05T19:19:10.7465136Z State: Starting, Action: StartingSiteContainers, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: , DetailsLevel: INFO
+2026-03-05T19:19:10.7564432Z Container start method called.
+2026-03-05T19:19:10.7637095Z State: Starting, Action: PullingImage, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Pulling image 10.1.0.6:13209/appsvc/python:3.12_20260203.2.tuxprod for tenova-app., DetailsLevel: INFO
+2026-03-05T19:19:10.7641729Z Establishing network.
+2026-03-05T19:19:10.7646791Z Pulling image: appsvc/python:3.12_20260203.2.tuxprod.
+2026-03-05T19:19:13.1727049Z Container is starting.
+2026-03-05T19:19:13.1730111Z State: Starting, Action: MountingVolumes, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Mounting volumes for tenova-app., DetailsLevel: INFO
+2026-03-05T19:19:13.1737400Z Establishing user namespace if not established already.
+2026-03-05T19:19:13.1808088Z Establishing network if not established already.
+2026-03-05T19:19:13.1818671Z Mounting volumes.
+2026-03-05T19:19:13.1838421Z Nested mountpoint 
+2026-03-05T19:19:13.2219289Z Nested mountpoint volatile/logs
+2026-03-05T19:19:13.2541751Z Nested mountpoint 
+2026-03-05T19:19:13.3226731Z Nested mountpoint 
+2026-03-05T19:19:13.3339851Z Nested mountpoint 
+2026-03-05T19:19:13.8847241Z State: Starting, Action: CreatingContainer, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Finished pulling container image and mounting volumes for tenova-app. Allocatinng the rest of the container resources to finish container creation., DetailsLevel: INFO
+2026-03-05T19:19:13.8850787Z Creating container.
+2026-03-05T19:19:13.8861192Z Creating pipes for streaming container io.
+2026-03-05T19:19:13.8870088Z Creating stdout named pipe at /podr/container/pipe/8383f0458b00_tenova-app/stdout_5064331b9aa54d51b9544040aa04a2b8.
+2026-03-05T19:19:13.8952778Z Successfully created stdout named pipe at: /podr/container/pipe/8383f0458b00_tenova-app/stdout_5064331b9aa54d51b9544040aa04a2b8.
+2026-03-05T19:19:13.8962084Z Opening named pipe /podr/container/pipe/8383f0458b00_tenova-app/stdout_5064331b9aa54d51b9544040aa04a2b8 for reading in non-blocking mode.
+2026-03-05T19:19:13.8973076Z Successfully opened named pipe: /podr/container/pipe/8383f0458b00_tenova-app/stdout_5064331b9aa54d51b9544040aa04a2b8.
+2026-03-05T19:19:13.9046482Z Successfully removed non-blocking flag from /podr/container/pipe/8383f0458b00_tenova-app/stdout_5064331b9aa54d51b9544040aa04a2b8.
+2026-03-05T19:19:13.9055440Z Creating stderr named pipe at /podr/container/pipe/8383f0458b00_tenova-app/stderr_4b509de7b7e44d0a80884b96d6a24c77.
+2026-03-05T19:19:13.9060755Z Successfully created stderr named pipe at: /podr/container/pipe/8383f0458b00_tenova-app/stderr_4b509de7b7e44d0a80884b96d6a24c77.
+2026-03-05T19:19:13.9065588Z Opening named pipe /podr/container/pipe/8383f0458b00_tenova-app/stderr_4b509de7b7e44d0a80884b96d6a24c77 for reading in non-blocking mode.
+2026-03-05T19:19:13.9070894Z Successfully opened named pipe: /podr/container/pipe/8383f0458b00_tenova-app/stderr_4b509de7b7e44d0a80884b96d6a24c77.
+2026-03-05T19:19:13.9074990Z Successfully removed non-blocking flag from /podr/container/pipe/8383f0458b00_tenova-app/stderr_4b509de7b7e44d0a80884b96d6a24c77.
+2026-03-05T19:19:13.9159012Z Creating container with image: appsvc/python:3.12_20260203.2.tuxprod from registry: mcr.microsoft.com and fully qualified image name: mcr.microsoft.com/appsvc/python:3.12_20260203.2.tuxprod
+2026-03-05T19:19:14.6534493Z Starting container: 8383f0458b00_tenova-app.
+2026-03-05T19:19:14.7338799Z Starting watchers and probes.
+2026-03-05T19:19:14.7543119Z Starting metrics collection.
+2026-03-05T19:19:14.7647286Z Container is running.
+2026-03-05T19:19:14.8052315Z State: Starting, Action: CreatingContainer, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Container tenova-app successfully created and is running., DetailsLevel: INFO
+2026-03-05T19:19:15.1854324Z Container start method finished after 4419 ms.
+2026-03-05T19:19:15.1878818Z State: Starting, Action: InitiatingSiteWarmUpProbe, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Container tenova-app successfully created and is running., DetailsLevel: INFO
+2026-03-05T19:19:15.2158496Z State: Starting, Action: WaitingForSiteWarmUpProbeSuccess, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Pinging warmup path to ensure container is ready to receive requests., DetailsLevel: INFO
+2026-03-05T19:20:08.2592278Z Site startup probe succeeded after 53.0223072 seconds.
+2026-03-05T19:20:08.4172733Z State: Starting, Action: WarmUpProbeSucceeded, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Site startup probe succeeded after 53.0223072 seconds., DetailsLevel: INFO
+2026-03-05T19:20:08.7303962Z Site is running with deployment version: 385be5ba-8adc-4ef0-aea8-20d5f7edd285
+2026-03-05T19:20:08.7306556Z Site started.
+2026-03-05T19:20:08.7307299Z State: Started, Action: None, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Site started at 03/05/2026 19:20:08 (UTC), DetailsLevel: INFO
+2026-03-05T19:20:08.7417653Z Site is running with patch version PYTHON 3.12.12
+2026-03-05T19:20:29.1420232Z State: Stopping, Action: StoppingSite, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Site started at 03/05/2026 19:13:49 (UTC), DetailsLevel: INFO
+2026-03-05T19:20:29.1726212Z State: Stopping, Action: StoppingSiteContainers, LastError: , LastErrorTimestamp: 01/01/0001 00:00:00, LastErrorDetails: , Details: Site started at 03/05/2026 19:13:49 (UTC), DetailsLevel: INFO
+2026-03-05T19:20:29.1945504Z Container is terminating. Grace period: 5 seconds.
+2026-03-05T19:20:29.2525126Z Stop and delete container. Retry count = 0
+2026-03-05T19:20:29.2719443Z Stopping container: cc0b1f760d3b_tenova-app.
+2026-03-05T19:20:34.5553883Z Deleting container: cc0b1f760d3b_tenova-app. Retry count = 0
+2026-03-05T19:20:35.8137233Z Container spec TerminationMessagePolicy  path 
+2026-03-05T19:20:35.8318705Z Container is terminated. Total time elapsed: 6628 ms.
+2026-03-05T19:20:35.8426429Z Site: tenova-app stopped.
