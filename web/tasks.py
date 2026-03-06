@@ -20,7 +20,6 @@ from azure.core.credentials import AccessToken, TokenCredential
 from tenova.scanner import scan_subscription, list_subscriptions
 from tenova.readiness import check_readiness
 from tenova.rbac import export_rbac
-from tenova.policy import export_policies
 from tenova.logger import get_logger
 
 logger = get_logger("tasks")
@@ -117,22 +116,6 @@ def start_rbac_export(access_token: str, subscription_id: str) -> str:
     return task_id
 
 
-def start_policy_export(access_token: str, subscription_id: str) -> str:
-    """Launch a background Azure Policy export and return a task ID."""
-    task_id = str(uuid.uuid4())[:8]
-    task = TaskResult(task_id=task_id, task_type="policy_export")
-    _tasks[task_id] = task
-
-    thread = threading.Thread(
-        target=_run_policy_export,
-        args=(task, access_token, subscription_id),
-        daemon=True,
-    )
-    thread.start()
-    logger.info("Policy export task %s started for subscription %s", task_id, subscription_id)
-    return task_id
-
-
 def get_task(task_id: str) -> TaskResult | None:
     """Retrieve a task result by ID."""
     return _tasks.get(task_id)
@@ -210,34 +193,5 @@ def _run_rbac_export(task: TaskResult, access_token: str, subscription_id: str) 
         task.error = str(exc)
         task.status = TaskStatus.FAILED
         logger.exception("RBAC export task %s failed", task.task_id)
-    finally:
-        task.completed_at = datetime.now(timezone.utc)
-
-
-def _run_policy_export(task: TaskResult, access_token: str, subscription_id: str) -> None:
-    """Execute the Azure Policy export in a background thread."""
-    task.status = TaskStatus.RUNNING
-    task.started_at = datetime.now(timezone.utc)
-    try:
-        cred = _credential_from_token(access_token)
-        export_path = export_policies(cred, subscription_id)
-        import json as _json
-        with open(export_path, "r") as f:
-            export_data = _json.load(f)
-        task.result = {
-            "policy_export": {
-                "file_path": str(export_path),
-                "policy_assignments_count": len(export_data.get("policy_assignments", [])),
-                "custom_definitions_count": len(export_data.get("custom_policy_definitions", [])),
-                "initiatives_count": len(export_data.get("custom_policy_set_definitions", [])),
-                "export_data": export_data,
-            }
-        }
-        task.status = TaskStatus.COMPLETED
-        logger.info("Policy export task %s completed → %s", task.task_id, export_path)
-    except Exception as exc:
-        task.error = str(exc)
-        task.status = TaskStatus.FAILED
-        logger.exception("Policy export task %s failed", task.task_id)
     finally:
         task.completed_at = datetime.now(timezone.utc)

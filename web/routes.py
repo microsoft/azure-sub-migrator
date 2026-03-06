@@ -16,7 +16,7 @@ from flask import (
 )
 
 from web.auth_web import login_required, get_access_token
-from web.tasks import fetch_subscriptions, get_task, start_scan, start_readiness_check, start_rbac_export, start_policy_export
+from web.tasks import fetch_subscriptions, get_task, start_scan, start_readiness_check, start_rbac_export
 
 main_bp = Blueprint("main", __name__)
 
@@ -259,58 +259,6 @@ def rbac_download(task_id: str):
         status=200,
         mimetype="application/json",
         headers={"Content-Disposition": f"attachment; filename=rbac_export_{task_id}.json"},
-    )
-    return response
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Azure Policy Export
-# ──────────────────────────────────────────────────────────────────────
-
-@main_bp.route("/export-policy", methods=["POST"])
-@login_required
-def export_policy_route():
-    """Start a background Azure Policy export."""
-    subscription_id = request.form.get("subscription_id", "")
-    if not subscription_id:
-        return jsonify({"error": "subscription_id is required"}), 400
-
-    token = get_access_token()
-    task_id = start_policy_export(token, subscription_id)
-    session["last_policy_sub"] = subscription_id
-    return redirect(url_for("main.policy_export_status", task_id=task_id))
-
-
-@main_bp.route("/export-policy/<task_id>")
-@login_required
-def policy_export_status(task_id: str):
-    """Show Policy export progress / results."""
-    task = get_task(task_id)
-    if task is None:
-        return render_template("error.html", message="Task not found."), 404
-
-    return render_template(
-        "policy_export.html",
-        task=task,
-        task_id=task_id,
-        subscription_id=session.get("last_policy_sub", ""),
-    )
-
-
-@main_bp.route("/api/policy-download/<task_id>")
-@login_required
-def policy_download(task_id: str):
-    """Download the Policy export JSON from a completed export task."""
-    task = get_task(task_id)
-    if task is None or task.result is None:
-        return jsonify({"error": "Export not found or not complete"}), 404
-
-    policy_data = task.result.get("policy_export", {}).get("export_data", {})
-    response = current_app.response_class(
-        response=json.dumps(policy_data, indent=2),
-        status=200,
-        mimetype="application/json",
-        headers={"Content-Disposition": f"attachment; filename=policy_export_{task_id}.json"},
     )
     return response
 

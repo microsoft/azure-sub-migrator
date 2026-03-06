@@ -29,9 +29,5 @@ class RBACError(AzTenantMigrateError):
     """Raised when role-assignment or managed-identity operations fail."""
 
 
-class PolicyExportError(AzTenantMigrateError):
-    """Raised when Azure Policy export operations fail."""
-
-
 class ExternalToolError(AzTenantMigrateError):
     """Raised when an external tool (aztfexport, azcopy, etc.) fails."""

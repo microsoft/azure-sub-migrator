@@ -69,12 +69,6 @@
                   <i class="bi bi-shield-lock me-1"></i>Export RBAC
                 </button>
               </form>
-              <form method="POST" action="{{ url_for('main.export_policy_route') }}" class="d-inline">
-                <input type="hidden" name="subscription_id" value="{{ sub.subscription_id }}" />
-                <button type="submit" class="btn btn-outline-secondary btn-sm">
-                  <i class="bi bi-file-earmark-ruled me-1"></i>Export Policy
-                </button>
-              </form>
             </div>
           </td>
         </tr>

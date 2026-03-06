@@ -344,58 +344,6 @@ def export_rbac_cmd(ctx: click.Context, subscription_id: str, output_dir: Path) 
     console.print("\n[yellow]⚠ Keep this file safe — you will need it to restore RBAC after transfer.[/]")
 
 
-@cli.command("export-policy")
-@click.option("--subscription-id", "-s", required=True, help="Subscription ID.")
-@click.option(
-    "--output-dir", "-o",
-    type=click.Path(path_type=Path),
-    default="migration_output",
-    show_default=True,
-    help="Directory to save the policy export file.",
-)
-@click.pass_context
-def export_policy_cmd(ctx: click.Context, subscription_id: str, output_dir: Path) -> None:
-    """Export policy assignments, custom definitions, and initiatives to JSON.
-
-    Run this BEFORE the subscription transfer — all policy objects are
-    permanently deleted during transfer.
-    """
-    cfg: MigrationConfig = ctx.obj["config"]
-    try:
-        credential = get_credential(
-            method=cfg.auth_method,
-            tenant_id=cfg.source_tenant_id or None,
-            client_id=cfg.client_id or None,
-            client_secret=cfg.client_secret or None,
-        )
-    except Exception as exc:
-        console.print(f"[bold red]\u2718 Authentication failed:[/] {exc}")
-        sys.exit(1)
-
-    from tenova.policy import export_policies
-
-    console.print(f"[bold cyan]Exporting Azure Policy for subscription {subscription_id}\u2026[/]")
-    filepath = export_policies(credential, subscription_id, output_dir)
-    console.print(f"[bold green]\u2714 Policy exported to:[/] {filepath}")
-
-    # Show summary
-    import json
-
-    data = json.loads(filepath.read_text(encoding="utf-8"))
-    summary = data.get("summary", {})
-
-    from rich.table import Table
-
-    table = Table(title="Azure Policy Export Summary")
-    table.add_column("Category", style="cyan")
-    table.add_column("Count", justify="right", style="bold")
-    table.add_row("Policy Assignments", str(summary.get("policy_assignment_count", 0)))
-    table.add_row("Custom Definitions", str(summary.get("custom_definition_count", 0)))
-    table.add_row("Initiatives (Sets)", str(summary.get("initiative_count", 0)))
-    console.print(table)
-    console.print("\n[yellow]\u26a0 Keep this file safe \u2014 policy objects are permanently deleted during transfer.[/]")
-
-
 @cli.command("import-rbac")
 @click.option("--subscription-id", "-s", required=True, help="Target subscription ID.")
 @click.option(

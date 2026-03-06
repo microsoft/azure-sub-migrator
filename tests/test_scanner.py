@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from tenova.scanner import (
+    _collect_policy_items,
     _extract_resource_group,
     _is_impacted,
     list_subscriptions,
@@ -47,9 +48,10 @@ class TestListSubscriptions:
 
 
 class TestScanSubscription:
+    @patch("tenova.scanner._collect_policy_items", return_value=[])
     @patch("tenova.scanner._query_resource_graph", return_value=set())
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_classifies_resources_static(self, mock_client_cls, mock_graph, mock_credential):
+    def test_classifies_resources_static(self, mock_client_cls, mock_graph, mock_policy, mock_credential):
         """Static list flags Key Vault even when Resource Graph returns nothing."""
         vm = MagicMock()
         vm.id = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
@@ -80,9 +82,10 @@ class TestScanSubscription:
         assert "learn.microsoft.com" in result["requires_action"][0]["doc_url"]
         assert "known impacted type" in result["requires_action"][0]["detection"]
 
+    @patch("tenova.scanner._collect_policy_items", return_value=[])
     @patch("tenova.scanner._query_resource_graph")
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_graph_detects_resource_not_in_static_list(self, mock_client_cls, mock_graph, mock_credential):
+    def test_graph_detects_resource_not_in_static_list(self, mock_client_cls, mock_graph, mock_policy, mock_credential):
         """Resource Graph flags a resource type that is NOT in the static list."""
         # A custom resource type not in IMPACTED_RESOURCE_TYPES
         custom = MagicMock()
@@ -104,9 +107,10 @@ class TestScanSubscription:
         assert "doc_url" in result["requires_action"][0]
         assert "transfer-subscription" in result["requires_action"][0]["doc_url"]
 
+    @patch("tenova.scanner._collect_policy_items", return_value=[])
     @patch("tenova.scanner._query_resource_graph")
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_both_layers_flag_resource(self, mock_client_cls, mock_graph, mock_credential):
+    def test_both_layers_flag_resource(self, mock_client_cls, mock_graph, mock_policy, mock_credential):
         """Resource detected by both Graph AND static list shows combined detection."""
         kv = MagicMock()
         kv.id = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/kv1"
@@ -123,3 +127,146 @@ class TestScanSubscription:
         detection = result["requires_action"][0]["detection"]
         assert "runtime" in detection
         assert "known impacted type" in detection
+
+    @patch("tenova.scanner._collect_policy_items")
+    @patch("tenova.scanner._query_resource_graph", return_value=set())
+    @patch("tenova.scanner.ResourceManagementClient")
+    def test_policy_items_merged_into_requires_action(self, mock_client_cls, mock_graph, mock_policy, mock_credential):
+        """Policy items from _collect_policy_items are appended to requires_action."""
+        vm = MagicMock()
+        vm.id = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
+        vm.name = "vm1"
+        vm.type = "Microsoft.Compute/virtualMachines"
+        vm.location = "eastus"
+
+        mock_client_cls.return_value.resources.list.return_value = [vm]
+
+        # Simulate policy items returned
+        mock_policy.return_value = [
+            {
+                "id": "/subscriptions/sub-1/providers/Microsoft.Authorization/policyAssignments",
+                "name": "3 policy assignment(s): Require tags, Allowed locations, Audit VMs",
+                "type": "Microsoft.Authorization/policyAssignments",
+                "location": "subscription-wide",
+                "resource_group": "—",
+                "detection": "policy API",
+                "timing": "pre",
+                "pre_action": "Export before transfer",
+                "post_action": "Reimport after transfer",
+                "doc_url": "https://learn.microsoft.com/en-us/azure/governance/policy/overview",
+            },
+        ]
+
+        result = scan_subscription(mock_credential, "sub-1")
+
+        assert len(result["transfer_safe"]) == 1
+        assert len(result["requires_action"]) == 1
+        assert result["requires_action"][0]["type"] == "Microsoft.Authorization/policyAssignments"
+        assert "3 policy assignment(s)" in result["requires_action"][0]["name"]
+        assert result["requires_action"][0]["detection"] == "policy API"
+
+
+class TestCollectPolicyItems:
+    @patch("tenova.scanner.PolicyClient")
+    def test_returns_assignment_summary(self, mock_client_cls, mock_credential):
+        """Policy assignments are returned as a single summary entry."""
+        pa1 = MagicMock()
+        pa1.display_name = "Require tags"
+        pa1.name = "pa1"
+        pa2 = MagicMock()
+        pa2.display_name = "Allowed locations"
+        pa2.name = "pa2"
+        mock_client_cls.return_value.policy_assignments.list.return_value = [pa1, pa2]
+        mock_client_cls.return_value.policy_definitions.list.return_value = []
+
+        result = _collect_policy_items(mock_credential, "sub-1")
+
+        assert len(result) == 1
+        assert result[0]["type"] == "Microsoft.Authorization/policyAssignments"
+        assert "2 policy assignment(s)" in result[0]["name"]
+        assert "Require tags" in result[0]["name"]
+        assert "Allowed locations" in result[0]["name"]
+        assert result[0]["detection"] == "policy API"
+        assert result[0]["timing"] == "pre"
+
+    @patch("tenova.scanner.PolicyClient")
+    def test_returns_custom_definition_summary(self, mock_client_cls, mock_credential):
+        """Custom policy definitions are returned as a single summary entry."""
+        mock_client_cls.return_value.policy_assignments.list.return_value = []
+
+        pd1 = MagicMock()
+        pd1.display_name = "Audit storage"
+        pd1.name = "custom1"
+        mock_client_cls.return_value.policy_definitions.list.return_value = [pd1]
+
+        result = _collect_policy_items(mock_credential, "sub-1")
+
+        assert len(result) == 1
+        assert result[0]["type"] == "Microsoft.Authorization/policyDefinitions"
+        assert "1 custom policy definition(s)" in result[0]["name"]
+        assert "Audit storage" in result[0]["name"]
+        # Verify server-side filter was used
+        mock_client_cls.return_value.policy_definitions.list.assert_called_once_with(
+            filter="policyType eq 'Custom'",
+        )
+
+    @patch("tenova.scanner.PolicyClient")
+    def test_returns_both_when_both_exist(self, mock_client_cls, mock_credential):
+        """Both assignments and custom definitions produce two entries."""
+        pa = MagicMock()
+        pa.display_name = "Require tags"
+        pa.name = "pa1"
+        mock_client_cls.return_value.policy_assignments.list.return_value = [pa]
+
+        pd = MagicMock()
+        pd.display_name = "Audit storage"
+        pd.name = "custom1"
+        mock_client_cls.return_value.policy_definitions.list.return_value = [pd]
+
+        result = _collect_policy_items(mock_credential, "sub-1")
+
+        assert len(result) == 2
+        types = {r["type"] for r in result}
+        assert "Microsoft.Authorization/policyAssignments" in types
+        assert "Microsoft.Authorization/policyDefinitions" in types
+
+    @patch("tenova.scanner.PolicyClient")
+    def test_returns_empty_when_no_policy_objects(self, mock_client_cls, mock_credential):
+        """No items returned when subscription has no policy objects."""
+        mock_client_cls.return_value.policy_assignments.list.return_value = []
+        mock_client_cls.return_value.policy_definitions.list.return_value = []
+
+        result = _collect_policy_items(mock_credential, "sub-1")
+
+        assert result == []
+
+    @patch("tenova.scanner.PolicyClient")
+    def test_truncates_names_beyond_five(self, mock_client_cls, mock_credential):
+        """Only the first 5 names are shown, rest truncated with count."""
+        assignments = []
+        for i in range(8):
+            pa = MagicMock()
+            pa.display_name = f"Policy {i}"
+            pa.name = f"pa{i}"
+            assignments.append(pa)
+        mock_client_cls.return_value.policy_assignments.list.return_value = assignments
+        mock_client_cls.return_value.policy_definitions.list.return_value = []
+
+        result = _collect_policy_items(mock_credential, "sub-1")
+
+        assert len(result) == 1
+        assert "8 policy assignment(s)" in result[0]["name"]
+        assert "Policy 0" in result[0]["name"]
+        assert "Policy 4" in result[0]["name"]
+        # Policy 5-7 should not be named individually
+        assert "Policy 5" not in result[0]["name"]
+        assert "(+3 more)" in result[0]["name"]
+
+    @patch("tenova.scanner.PolicyClient")
+    def test_policy_api_failure_returns_empty(self, mock_client_cls, mock_credential):
+        """Policy API failure is non-fatal — returns empty list."""
+        mock_client_cls.side_effect = Exception("Permission denied")
+
+        result = _collect_policy_items(mock_credential, "sub-1")
+
+        assert result == []

@@ -24,6 +24,7 @@ from typing import Any
 
 from azure.core.credentials import TokenCredential
 from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.resource.policy import PolicyClient
 from azure.mgmt.subscription import SubscriptionClient
 
 from tenova.constants import IMPACTED_RESOURCE_TYPES, REQUIRED_ACTIONS
@@ -139,6 +140,15 @@ def scan_subscription(
             len(requires_action),
             len(graph_impacted_ids),
         )
+
+        # ── Step 3: Discover policy objects (separate API namespace) ──
+        # Policy assignments/definitions are NOT returned by resources.list()
+        # but are permanently deleted during cross-tenant transfer.
+        policy_items = _collect_policy_items(credential, subscription_id)
+        requires_action.extend(policy_items)
+        if policy_items:
+            logger.info("Added %d policy item(s) to requires-action", len(policy_items))
+
         return {"transfer_safe": transfer_safe, "requires_action": requires_action}
 
     except Exception as exc:
@@ -218,6 +228,96 @@ def _query_resource_graph(
             "Resource Graph query failed (will use static list only): %s", exc
         )
         return set()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Policy discovery — lightweight count-only scan
+# ──────────────────────────────────────────────────────────────────────
+
+def _collect_policy_items(
+    credential: TokenCredential,
+    subscription_id: str,
+) -> list[dict[str, Any]]:
+    """Discover policy assignments and custom definitions via the Policy API.
+
+    These objects live in a separate ARM namespace and are NOT returned by
+    ``resources.list()``.  They are **permanently deleted** during a
+    cross-tenant subscription transfer and must be recreated afterward.
+
+    Returns lightweight summary entries (one per category) to be merged
+    into the ``requires_action`` list.
+    """
+    items: list[dict[str, Any]] = []
+    try:
+        client = PolicyClient(credential, subscription_id)
+
+        # ── Policy Assignments ─────────────────────────────────────
+        assignment_count = 0
+        assignment_names: list[str] = []
+        for pa in client.policy_assignments.list():
+            assignment_count += 1
+            name = pa.display_name or pa.name or ""
+            if len(assignment_names) < 5:  # keep first 5 for display
+                assignment_names.append(name)
+
+        if assignment_count > 0:
+            action_info = REQUIRED_ACTIONS.get(
+                "Microsoft.Authorization/policyAssignments", {}
+            )
+            sample_text = ", ".join(assignment_names)
+            if assignment_count > 5:
+                sample_text += f", … (+{assignment_count - 5} more)"
+            items.append({
+                "id": f"/subscriptions/{subscription_id}/providers/Microsoft.Authorization/policyAssignments",
+                "name": f"{assignment_count} policy assignment(s): {sample_text}",
+                "type": "Microsoft.Authorization/policyAssignments",
+                "location": "subscription-wide",
+                "resource_group": "—",
+                "detection": "policy API",
+                "timing": action_info.get("timing", "pre"),
+                "pre_action": action_info.get("pre", ""),
+                "post_action": action_info.get("post", ""),
+                "doc_url": action_info.get("doc_url", ""),
+            })
+            logger.info("Found %d policy assignment(s)", assignment_count)
+
+        # ── Custom Policy Definitions ──────────────────────────────
+        custom_def_count = 0
+        custom_def_names: list[str] = []
+        for pd in client.policy_definitions.list(
+            filter="policyType eq 'Custom'",
+        ):
+            custom_def_count += 1
+            name = pd.display_name or pd.name or ""
+            if len(custom_def_names) < 5:
+                custom_def_names.append(name)
+
+        if custom_def_count > 0:
+            action_info = REQUIRED_ACTIONS.get(
+                "Microsoft.Authorization/policyDefinitions", {}
+            )
+            sample_text = ", ".join(custom_def_names)
+            if custom_def_count > 5:
+                sample_text += f", … (+{custom_def_count - 5} more)"
+            items.append({
+                "id": f"/subscriptions/{subscription_id}/providers/Microsoft.Authorization/policyDefinitions",
+                "name": f"{custom_def_count} custom policy definition(s): {sample_text}",
+                "type": "Microsoft.Authorization/policyDefinitions",
+                "location": "subscription-wide",
+                "resource_group": "—",
+                "detection": "policy API",
+                "timing": action_info.get("timing", "pre"),
+                "pre_action": action_info.get("pre", ""),
+                "post_action": action_info.get("post", ""),
+                "doc_url": action_info.get("doc_url", ""),
+            })
+            logger.info("Found %d custom policy definition(s)", custom_def_count)
+
+    except Exception as exc:
+        # Policy API failure should NOT block the entire scan
+        logger.warning("Policy discovery failed (non-fatal): %s", exc)
+
+    return items
 
 
 # ──────────────────────────────────────────────────────────────────────
