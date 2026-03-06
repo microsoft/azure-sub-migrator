@@ -11,6 +11,7 @@ transfer.  This module provides:
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -89,10 +90,9 @@ def list_custom_policy_definitions(
     try:
         client = PolicyClient(credential, subscription_id)
         definitions: list[dict[str, Any]] = []
-        for pd in client.policy_definitions.list():
-            # Skip built-in policies — only export custom ones
-            if pd.policy_type and str(pd.policy_type).lower() == "builtin":
-                continue
+        for pd in client.policy_definitions.list(
+            filter="policyType eq 'Custom'",
+        ):
             definitions.append(
                 {
                     "id": pd.id,
@@ -124,10 +124,9 @@ def list_custom_policy_set_definitions(
     try:
         client = PolicyClient(credential, subscription_id)
         initiatives: list[dict[str, Any]] = []
-        for psd in client.policy_set_definitions.list():
-            # Skip built-in — only export custom initiatives
-            if psd.policy_type and str(psd.policy_type).lower() == "builtin":
-                continue
+        for psd in client.policy_set_definitions.list(
+            filter="policyType eq 'Custom'",
+        ):
             initiatives.append(
                 {
                     "id": psd.id,
@@ -173,9 +172,14 @@ def export_policies(
 
     logger.info("Exporting Azure Policy for subscription %s …", subscription_id)
 
-    assignments = list_policy_assignments(credential, subscription_id)
-    definitions = list_custom_policy_definitions(credential, subscription_id)
-    initiatives = list_custom_policy_set_definitions(credential, subscription_id)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        fut_assignments = pool.submit(list_policy_assignments, credential, subscription_id)
+        fut_definitions = pool.submit(list_custom_policy_definitions, credential, subscription_id)
+        fut_initiatives = pool.submit(list_custom_policy_set_definitions, credential, subscription_id)
+
+    assignments = fut_assignments.result()
+    definitions = fut_definitions.result()
+    initiatives = fut_initiatives.result()
 
     export_data = {
         "exported_at": datetime.now(timezone.utc).isoformat(),

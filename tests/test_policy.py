@@ -52,7 +52,7 @@ class TestListPolicyAssignments:
 class TestListCustomPolicyDefinitions:
     @patch("tenova.policy.PolicyClient")
     def test_returns_custom_definitions_only(self, mock_client_cls, mock_credential):
-        # Custom definition
+        # Server-side filter returns only custom definitions
         custom_pd = MagicMock()
         custom_pd.id = "/subscriptions/s/providers/Microsoft.Authorization/policyDefinitions/custom1"
         custom_pd.name = "custom1"
@@ -64,23 +64,22 @@ class TestListCustomPolicyDefinitions:
         custom_pd.parameters = {}
         custom_pd.metadata = {"category": "Storage"}
 
-        # Built-in definition (should be skipped)
-        builtin_pd = MagicMock()
-        builtin_pd.policy_type = "BuiltIn"
-
-        mock_client_cls.return_value.policy_definitions.list.return_value = [builtin_pd, custom_pd]
+        mock_client_cls.return_value.policy_definitions.list.return_value = [custom_pd]
 
         result = list_custom_policy_definitions(mock_credential, "sub-1")
 
         assert len(result) == 1
         assert result[0]["name"] == "custom1"
         assert result[0]["display_name"] == "Custom audit storage"
+        # Verify filter was passed to the API
+        mock_client_cls.return_value.policy_definitions.list.assert_called_once_with(
+            filter="policyType eq 'Custom'",
+        )
 
     @patch("tenova.policy.PolicyClient")
-    def test_empty_when_only_builtins(self, mock_client_cls, mock_credential):
-        builtin_pd = MagicMock()
-        builtin_pd.policy_type = "BuiltIn"
-        mock_client_cls.return_value.policy_definitions.list.return_value = [builtin_pd]
+    def test_empty_when_no_custom_definitions(self, mock_client_cls, mock_credential):
+        # Server-side filter returns nothing when only built-ins exist
+        mock_client_cls.return_value.policy_definitions.list.return_value = []
 
         result = list_custom_policy_definitions(mock_credential, "sub-1")
 
@@ -113,10 +112,9 @@ class TestListCustomPolicySetDefinitions:
         assert len(result[0]["policy_definitions"]) == 1
 
     @patch("tenova.policy.PolicyClient")
-    def test_skips_builtin_initiatives(self, mock_client_cls, mock_credential):
-        builtin = MagicMock()
-        builtin.policy_type = "BuiltIn"
-        mock_client_cls.return_value.policy_set_definitions.list.return_value = [builtin]
+    def test_empty_when_no_custom_initiatives(self, mock_client_cls, mock_credential):
+        # Server-side filter returns nothing when only built-ins exist
+        mock_client_cls.return_value.policy_set_definitions.list.return_value = []
 
         result = list_custom_policy_set_definitions(mock_credential, "sub-1")
 
