@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from flask import Flask
@@ -23,6 +24,12 @@ def create_app() -> Flask:
 
     # ── Configuration ────────────────────────────────────────────────
     app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+
+    # Session idle timeout (default 30 minutes)
+    app.config["SESSION_IDLE_MINUTES"] = int(os.environ.get("SESSION_IDLE_MINUTES", "30"))
+    app.permanent_session_lifetime = timedelta(
+        minutes=app.config["SESSION_IDLE_MINUTES"]
+    )
 
     # Entra ID / MSAL settings
     app.config["ENTRA_CLIENT_ID"] = os.environ.get("ENTRA_CLIENT_ID", "")

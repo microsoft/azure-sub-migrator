@@ -8,6 +8,7 @@ Azure Resource Manager.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from functools import wraps
 from typing import Any, Callable
 
@@ -79,6 +80,32 @@ def get_access_token() -> str | None:
 # Routes
 # ──────────────────────────────────────────────────────────────────────
 
+# ──────────────────────────────────────────────────────────────────────
+# Idle-session timeout (before every request)
+# ──────────────────────────────────────────────────────────────────────
+
+@auth_bp.before_app_request
+def _enforce_idle_timeout():
+    """Clear the session if the user has been idle too long."""
+    if "user" not in session:
+        return  # not logged in — nothing to enforce
+
+    last = session.get("last_activity")
+    if last:
+        from datetime import timedelta
+
+        idle_limit = timedelta(
+            minutes=current_app.config.get("SESSION_IDLE_MINUTES", 30)
+        )
+        last_dt = datetime.fromisoformat(last)
+        if datetime.now(timezone.utc) - last_dt > idle_limit:
+            session.clear()
+            return redirect(url_for("auth.login"))
+
+    # Update last-activity timestamp on every authenticated request
+    session["last_activity"] = datetime.now(timezone.utc).isoformat()
+
+
 @auth_bp.route("/login")
 def login():
     """Start the OAuth2 authorization-code flow."""
@@ -115,9 +142,11 @@ def callback():
 
     # Store user info, token, and tenant in session
     claims = result.get("id_token_claims", {})
+    session.permanent = True
     session["user"] = claims
     session["access_token"] = result.get("access_token")
     session["tenant_id"] = claims.get("tid", "")  # user's home tenant
+    session["last_activity"] = datetime.now(timezone.utc).isoformat()
     return redirect(url_for("main.dashboard"))
 
 
