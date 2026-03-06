@@ -5,7 +5,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from tenova.scanner import (
+    _collect_lock_items,
     _collect_policy_items,
+    _collect_rbac_items,
     _extract_resource_group,
     _is_impacted,
     list_subscriptions,
@@ -48,10 +50,12 @@ class TestListSubscriptions:
 
 
 class TestScanSubscription:
+    @patch("tenova.scanner._collect_lock_items", return_value=[])
+    @patch("tenova.scanner._collect_rbac_items", return_value=[])
     @patch("tenova.scanner._collect_policy_items", return_value=[])
     @patch("tenova.scanner._query_resource_graph", return_value=set())
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_classifies_resources_static(self, mock_client_cls, mock_graph, mock_policy, mock_credential):
+    def test_classifies_resources_static(self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential):
         """Static list flags Key Vault even when Resource Graph returns nothing."""
         vm = MagicMock()
         vm.id = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
@@ -82,10 +86,12 @@ class TestScanSubscription:
         assert "learn.microsoft.com" in result["requires_action"][0]["doc_url"]
         assert "known impacted type" in result["requires_action"][0]["detection"]
 
+    @patch("tenova.scanner._collect_lock_items", return_value=[])
+    @patch("tenova.scanner._collect_rbac_items", return_value=[])
     @patch("tenova.scanner._collect_policy_items", return_value=[])
     @patch("tenova.scanner._query_resource_graph")
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_graph_detects_resource_not_in_static_list(self, mock_client_cls, mock_graph, mock_policy, mock_credential):
+    def test_graph_detects_resource_not_in_static_list(self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential):
         """Resource Graph flags a resource type that is NOT in the static list."""
         # A custom resource type not in IMPACTED_RESOURCE_TYPES
         custom = MagicMock()
@@ -107,10 +113,12 @@ class TestScanSubscription:
         assert "doc_url" in result["requires_action"][0]
         assert "transfer-subscription" in result["requires_action"][0]["doc_url"]
 
+    @patch("tenova.scanner._collect_lock_items", return_value=[])
+    @patch("tenova.scanner._collect_rbac_items", return_value=[])
     @patch("tenova.scanner._collect_policy_items", return_value=[])
     @patch("tenova.scanner._query_resource_graph")
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_both_layers_flag_resource(self, mock_client_cls, mock_graph, mock_policy, mock_credential):
+    def test_both_layers_flag_resource(self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential):
         """Resource detected by both Graph AND static list shows combined detection."""
         kv = MagicMock()
         kv.id = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/kv1"
@@ -128,10 +136,12 @@ class TestScanSubscription:
         assert "runtime" in detection
         assert "known impacted type" in detection
 
+    @patch("tenova.scanner._collect_lock_items", return_value=[])
+    @patch("tenova.scanner._collect_rbac_items", return_value=[])
     @patch("tenova.scanner._collect_policy_items")
     @patch("tenova.scanner._query_resource_graph", return_value=set())
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_policy_items_merged_into_requires_action(self, mock_client_cls, mock_graph, mock_policy, mock_credential):
+    def test_policy_items_merged_into_requires_action(self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential):
         """Policy items from _collect_policy_items are appended to requires_action."""
         vm = MagicMock()
         vm.id = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
@@ -268,5 +278,151 @@ class TestCollectPolicyItems:
         mock_client_cls.side_effect = Exception("Permission denied")
 
         result = _collect_policy_items(mock_credential, "sub-1")
+
+        assert result == []
+
+
+class TestCollectRbacItems:
+    @patch("tenova.scanner.AuthorizationManagementClient")
+    def test_returns_assignment_count(self, mock_client_cls, mock_credential):
+        """Role assignments are returned as a single summary entry with count."""
+        ra1 = MagicMock()
+        ra2 = MagicMock()
+        ra3 = MagicMock()
+        mock_client_cls.return_value.role_assignments.list_for_subscription.return_value = [ra1, ra2, ra3]
+        mock_client_cls.return_value.role_definitions.list.return_value = []
+
+        result = _collect_rbac_items(mock_credential, "sub-1")
+
+        assert len(result) == 1
+        assert result[0]["type"] == "Microsoft.Authorization/roleAssignments"
+        assert "3 role assignment(s)" in result[0]["name"]
+        assert result[0]["detection"] == "authorization API"
+        assert result[0]["timing"] == "pre"
+
+    @patch("tenova.scanner.AuthorizationManagementClient")
+    def test_returns_custom_roles(self, mock_client_cls, mock_credential):
+        """Custom role definitions are returned as a summary entry."""
+        mock_client_cls.return_value.role_assignments.list_for_subscription.return_value = []
+
+        rd1 = MagicMock()
+        rd1.role_name = "VM Operator"
+        rd1.name = "rd1"
+        rd1.role_type = "CustomRole"
+        rd2 = MagicMock()
+        rd2.role_name = "Storage Reader Plus"
+        rd2.name = "rd2"
+        rd2.role_type = "CustomRole"
+        mock_client_cls.return_value.role_definitions.list.return_value = [rd1, rd2]
+
+        result = _collect_rbac_items(mock_credential, "sub-1")
+
+        assert len(result) == 1
+        assert result[0]["type"] == "Microsoft.Authorization/roleDefinitions"
+        assert "2 custom role(s)" in result[0]["name"]
+        assert "VM Operator" in result[0]["name"]
+        assert "Storage Reader Plus" in result[0]["name"]
+        # Verify filter was passed
+        mock_client_cls.return_value.role_definitions.list.assert_called_once_with(
+            f"/subscriptions/sub-1",
+            filter="type eq 'CustomRole'",
+        )
+
+    @patch("tenova.scanner.AuthorizationManagementClient")
+    def test_returns_both_assignments_and_custom_roles(self, mock_client_cls, mock_credential):
+        """Both assignments and custom roles produce two entries."""
+        ra = MagicMock()
+        mock_client_cls.return_value.role_assignments.list_for_subscription.return_value = [ra]
+
+        rd = MagicMock()
+        rd.role_name = "Custom Role"
+        rd.name = "rd1"
+        rd.role_type = "CustomRole"
+        mock_client_cls.return_value.role_definitions.list.return_value = [rd]
+
+        result = _collect_rbac_items(mock_credential, "sub-1")
+
+        assert len(result) == 2
+        types = {r["type"] for r in result}
+        assert "Microsoft.Authorization/roleAssignments" in types
+        assert "Microsoft.Authorization/roleDefinitions" in types
+
+    @patch("tenova.scanner.AuthorizationManagementClient")
+    def test_returns_empty_when_no_rbac(self, mock_client_cls, mock_credential):
+        """No items returned when subscription has no assignments or custom roles."""
+        mock_client_cls.return_value.role_assignments.list_for_subscription.return_value = []
+        mock_client_cls.return_value.role_definitions.list.return_value = []
+
+        result = _collect_rbac_items(mock_credential, "sub-1")
+
+        assert result == []
+
+    @patch("tenova.scanner.AuthorizationManagementClient")
+    def test_rbac_api_failure_returns_empty(self, mock_client_cls, mock_credential):
+        """RBAC API failure is non-fatal — returns empty list."""
+        mock_client_cls.side_effect = Exception("Forbidden")
+
+        result = _collect_rbac_items(mock_credential, "sub-1")
+
+        assert result == []
+
+
+class TestCollectLockItems:
+    @patch("tenova.scanner.ManagementLockClient")
+    def test_returns_lock_summary(self, mock_client_cls, mock_credential):
+        """Resource locks are returned as a single summary entry."""
+        lock1 = MagicMock()
+        lock1.name = "prod-lock"
+        lock1.level = "CanNotDelete"
+        lock2 = MagicMock()
+        lock2.name = "critical-lock"
+        lock2.level = "ReadOnly"
+        mock_client_cls.return_value.management_locks.list_at_subscription_level.return_value = [lock1, lock2]
+
+        result = _collect_lock_items(mock_credential, "sub-1")
+
+        assert len(result) == 1
+        assert result[0]["type"] == "Microsoft.Authorization/locks"
+        assert "2 resource lock(s)" in result[0]["name"]
+        assert "prod-lock" in result[0]["name"]
+        assert "critical-lock" in result[0]["name"]
+        assert result[0]["detection"] == "locks API"
+        assert result[0]["timing"] == "pre"
+
+    @patch("tenova.scanner.ManagementLockClient")
+    def test_returns_empty_when_no_locks(self, mock_client_cls, mock_credential):
+        """No items returned when subscription has no locks."""
+        mock_client_cls.return_value.management_locks.list_at_subscription_level.return_value = []
+
+        result = _collect_lock_items(mock_credential, "sub-1")
+
+        assert result == []
+
+    @patch("tenova.scanner.ManagementLockClient")
+    def test_truncates_lock_names_beyond_five(self, mock_client_cls, mock_credential):
+        """Only the first 5 lock names are shown, rest truncated."""
+        locks = []
+        for i in range(7):
+            lock = MagicMock()
+            lock.name = f"lock-{i}"
+            lock.level = "CanNotDelete"
+            locks.append(lock)
+        mock_client_cls.return_value.management_locks.list_at_subscription_level.return_value = locks
+
+        result = _collect_lock_items(mock_credential, "sub-1")
+
+        assert len(result) == 1
+        assert "7 resource lock(s)" in result[0]["name"]
+        assert "lock-0" in result[0]["name"]
+        assert "lock-4" in result[0]["name"]
+        assert "lock-5" not in result[0]["name"]
+        assert "(+2 more)" in result[0]["name"]
+
+    @patch("tenova.scanner.ManagementLockClient")
+    def test_lock_api_failure_returns_empty(self, mock_client_cls, mock_credential):
+        """Lock API failure is non-fatal — returns empty list."""
+        mock_client_cls.side_effect = Exception("Not authorized")
+
+        result = _collect_lock_items(mock_credential, "sub-1")
 
         assert result == []

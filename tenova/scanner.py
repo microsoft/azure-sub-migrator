@@ -23,7 +23,9 @@ from __future__ import annotations
 from typing import Any
 
 from azure.core.credentials import TokenCredential
+from azure.mgmt.authorization import AuthorizationManagementClient
 from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.resource.locks import ManagementLockClient
 from azure.mgmt.resource.policy import PolicyClient
 from azure.mgmt.subscription import SubscriptionClient
 
@@ -148,6 +150,20 @@ def scan_subscription(
         requires_action.extend(policy_items)
         if policy_items:
             logger.info("Added %d policy item(s) to requires-action", len(policy_items))
+
+        # ── Step 4: Discover RBAC items (separate API namespace) ──
+        # Role assignments and custom roles are permanently deleted.
+        rbac_items = _collect_rbac_items(credential, subscription_id)
+        requires_action.extend(rbac_items)
+        if rbac_items:
+            logger.info("Added %d RBAC item(s) to requires-action", len(rbac_items))
+
+        # ── Step 5: Discover resource locks ──
+        # Locks should be exported before transfer and recreated after.
+        lock_items = _collect_lock_items(credential, subscription_id)
+        requires_action.extend(lock_items)
+        if lock_items:
+            logger.info("Added %d lock item(s) to requires-action", len(lock_items))
 
         return {"transfer_safe": transfer_safe, "requires_action": requires_action}
 
@@ -316,6 +332,143 @@ def _collect_policy_items(
     except Exception as exc:
         # Policy API failure should NOT block the entire scan
         logger.warning("Policy discovery failed (non-fatal): %s", exc)
+
+    return items
+
+
+# ──────────────────────────────────────────────────────────────────────
+# RBAC discovery — role assignments & custom roles
+# ──────────────────────────────────────────────────────────────────────
+
+def _collect_rbac_items(
+    credential: TokenCredential,
+    subscription_id: str,
+) -> list[dict[str, Any]]:
+    """Discover RBAC role assignments and custom role definitions.
+
+    Role assignments and custom roles live under ``Microsoft.Authorization``
+    and are NOT returned by ``resources.list()``.  Both are **permanently
+    deleted** during a cross-tenant subscription transfer.
+
+    Returns lightweight summary entries to merge into ``requires_action``.
+    """
+    items: list[dict[str, Any]] = []
+    try:
+        client = AuthorizationManagementClient(credential, subscription_id)
+
+        # ── Role Assignments ───────────────────────────────────
+        assignment_count = sum(1 for _ in client.role_assignments.list_for_subscription())
+
+        if assignment_count > 0:
+            action_info = REQUIRED_ACTIONS.get(
+                "Microsoft.Authorization/roleAssignments", {}
+            )
+            items.append({
+                "id": f"/subscriptions/{subscription_id}/providers/Microsoft.Authorization/roleAssignments",
+                "name": f"{assignment_count} role assignment(s) (all permanently deleted during transfer)",
+                "type": "Microsoft.Authorization/roleAssignments",
+                "location": "subscription-wide",
+                "resource_group": "—",
+                "detection": "authorization API",
+                "timing": action_info.get("timing", "pre"),
+                "pre_action": action_info.get("pre", ""),
+                "post_action": action_info.get("post", ""),
+                "doc_url": action_info.get("doc_url", ""),
+            })
+            logger.info("Found %d role assignment(s)", assignment_count)
+
+        # ── Custom Role Definitions ─────────────────────────────
+        scope = f"/subscriptions/{subscription_id}"
+        custom_role_count = 0
+        custom_role_names: list[str] = []
+        for rd in client.role_definitions.list(scope, filter="type eq 'CustomRole'"):
+            custom_role_count += 1
+            name = rd.role_name or rd.name or ""
+            if len(custom_role_names) < 5:
+                custom_role_names.append(name)
+
+        if custom_role_count > 0:
+            action_info = REQUIRED_ACTIONS.get(
+                "Microsoft.Authorization/roleDefinitions", {}
+            )
+            sample_text = ", ".join(custom_role_names)
+            if custom_role_count > 5:
+                sample_text += f", … (+{custom_role_count - 5} more)"
+            items.append({
+                "id": f"/subscriptions/{subscription_id}/providers/Microsoft.Authorization/roleDefinitions",
+                "name": f"{custom_role_count} custom role(s): {sample_text}",
+                "type": "Microsoft.Authorization/roleDefinitions",
+                "location": "subscription-wide",
+                "resource_group": "—",
+                "detection": "authorization API",
+                "timing": action_info.get("timing", "pre"),
+                "pre_action": action_info.get("pre", ""),
+                "post_action": action_info.get("post", ""),
+                "doc_url": action_info.get("doc_url", ""),
+            })
+            logger.info("Found %d custom role definition(s)", custom_role_count)
+
+    except Exception as exc:
+        # RBAC API failure should NOT block the entire scan
+        logger.warning("RBAC discovery failed (non-fatal): %s", exc)
+
+    return items
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Resource lock discovery
+# ──────────────────────────────────────────────────────────────────────
+
+def _collect_lock_items(
+    credential: TokenCredential,
+    subscription_id: str,
+) -> list[dict[str, Any]]:
+    """Discover resource locks in the subscription.
+
+    Resource locks live under ``Microsoft.Authorization/locks`` and are NOT
+    returned by ``resources.list()``.  They should be exported before
+    transfer and recreated afterward.
+
+    Returns a lightweight summary entry to merge into ``requires_action``.
+    """
+    items: list[dict[str, Any]] = []
+    try:
+        client = ManagementLockClient(credential, subscription_id)
+
+        lock_count = 0
+        lock_names: list[str] = []
+        for lock in client.management_locks.list_at_subscription_level():
+            lock_count += 1
+            name = lock.name or ""
+            level = str(lock.level) if lock.level else ""
+            display = f"{name} ({level})" if level else name
+            if len(lock_names) < 5:
+                lock_names.append(display)
+
+        if lock_count > 0:
+            action_info = REQUIRED_ACTIONS.get(
+                "Microsoft.Authorization/locks", {}
+            )
+            sample_text = ", ".join(lock_names)
+            if lock_count > 5:
+                sample_text += f", … (+{lock_count - 5} more)"
+            items.append({
+                "id": f"/subscriptions/{subscription_id}/providers/Microsoft.Authorization/locks",
+                "name": f"{lock_count} resource lock(s): {sample_text}",
+                "type": "Microsoft.Authorization/locks",
+                "location": "subscription-wide",
+                "resource_group": "—",
+                "detection": "locks API",
+                "timing": action_info.get("timing", "pre"),
+                "pre_action": action_info.get("pre", ""),
+                "post_action": action_info.get("post", ""),
+                "doc_url": action_info.get("doc_url", ""),
+            })
+            logger.info("Found %d resource lock(s)", lock_count)
+
+    except Exception as exc:
+        # Lock API failure should NOT block the entire scan
+        logger.warning("Resource lock discovery failed (non-fatal): %s", exc)
 
     return items
 

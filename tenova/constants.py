@@ -27,8 +27,8 @@ MICROSOFT_TRANSFER_DOC_URL = (
 IMPACTED_RESOURCE_TYPES: list[str] = [
     # ── Identity & RBAC (always impacted) ──────────────────────────
     # All RBAC role assignments are permanently deleted during transfer.
-    # Custom roles are permanently deleted during transfer.
-    "Microsoft.ManagedIdentity/userAssignedIdentities",
+    # Custom roles are permanently deleted during transfer.    "Microsoft.Authorization/roleAssignments",
+    "Microsoft.Authorization/roleDefinitions",    "Microsoft.ManagedIdentity/userAssignedIdentities",
     "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials",
 
     # ── Key Vault ──────────────────────────────────────────────────
@@ -68,6 +68,10 @@ IMPACTED_RESOURCE_TYPES: list[str] = [
     # All policy objects (definitions, assignments, exemptions) are deleted.
     "Microsoft.Authorization/policyAssignments",
     "Microsoft.Authorization/policyDefinitions",
+
+    # ── Resource Locks ─────────────────────────────────────────────
+    # Resource locks should be exported before transfer and recreated after.
+    "Microsoft.Authorization/locks",
 
     # ── Azure Automation ───────────────────────────────────────────
     "Microsoft.Automation/automationAccounts",
@@ -126,6 +130,20 @@ IMPACTED_RESOURCE_TYPES: list[str] = [
 # timing = "both" → Has steps required both before AND after the transfer
 #
 REQUIRED_ACTIONS: dict[str, dict[str, str]] = {
+    # ── RBAC ────────────────────────────────────────────────────────
+    "Microsoft.Authorization/roleAssignments": {
+        "timing": "pre",
+        "pre": "⚠️ ALL role assignments are PERMANENTLY DELETED during transfer. Export assignments (az role assignment list --all --include-inherited > assignments.json) before transfer.",
+        "post": "Map users, groups, and service principals to target-tenant objects. Recreate all role assignments.",
+        "doc_url": "https://learn.microsoft.com/en-us/azure/role-based-access-control/transfer-subscription",
+    },
+    "Microsoft.Authorization/roleDefinitions": {
+        "timing": "pre",
+        "pre": "⚠️ ALL custom role definitions are PERMANENTLY DELETED during transfer. Export definitions (az role definition list --custom-role-only true > custom_roles.json) before transfer.",
+        "post": "Recreate custom role definitions in the target tenant using the exported JSON, then recreate role assignments.",
+        "doc_url": "https://learn.microsoft.com/en-us/azure/role-based-access-control/transfer-subscription",
+    },
+
     # ── Identity ───────────────────────────────────────────────────
     "Microsoft.ManagedIdentity/userAssignedIdentities": {
         "timing": "both",
@@ -242,6 +260,14 @@ REQUIRED_ACTIONS: dict[str, dict[str, str]] = {
         "pre": "⚠️ ALL custom policy definitions are PERMANENTLY DELETED during transfer. Export definitions (az policy definition list --custom > definitions.json) before transfer.",
         "post": "Recreate custom policy definitions in target tenant using the exported JSON.",
         "doc_url": "https://learn.microsoft.com/en-us/azure/governance/policy/overview",
+    },
+
+    # ── Resource Locks ─────────────────────────────────────────────
+    "Microsoft.Authorization/locks": {
+        "timing": "pre",
+        "pre": "⚠️ Resource locks should be exported before transfer. Export locks (az lock list > locks.json) before transfer.",
+        "post": "Recreate resource locks (CanNotDelete, ReadOnly) on protected resources in the target tenant.",
+        "doc_url": "https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/lock-resources",
     },
 
     # ── Azure Automation ───────────────────────────────────────────
@@ -380,6 +406,16 @@ TRANSFER_NOTES: dict[str, str] = {
     "Resource Locks": (
         "Resource locks should be exported BEFORE transfer as they may "
         "need to be recreated AFTER."
+    ),
+    "App Registrations": (
+        "App registrations live in the Entra ID tenant, not the subscription. "
+        "If subscription resources depend on app registrations (e.g. App Service "
+        "with Entra auth, Logic Apps with OAuth connectors), you must create "
+        "equivalent app registrations in the target tenant BEFORE transfer."
+    ),
+    "Entra ID Access Reviews": (
+        "Entra ID access reviews are deleted during transfer. "
+        "You must recreate access review policies in the target tenant AFTER transfer."
     ),
 }
 
