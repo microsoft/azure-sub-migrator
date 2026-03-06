@@ -24,6 +24,24 @@ from tenova.logger import get_logger
 logger = get_logger("policy")
 
 
+def _to_serializable(obj: Any) -> Any:
+    """Recursively convert Azure SDK model objects to JSON-safe primitives."""
+    if obj is None:
+        return None
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, dict):
+        return {k: _to_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_serializable(i) for i in obj]
+    # Azure SDK model — convert via as_dict() if available, else vars()
+    if hasattr(obj, "as_dict"):
+        return obj.as_dict()
+    if hasattr(obj, "__dict__"):
+        return {k: _to_serializable(v) for k, v in vars(obj).items() if not k.startswith("_")}
+    return str(obj)
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Policy Assignments
 # ──────────────────────────────────────────────────────────────────────
@@ -46,7 +64,7 @@ def list_policy_assignments(
                     "policy_definition_id": pa.policy_definition_id or "",
                     "scope": pa.scope or "",
                     "enforcement_mode": str(pa.enforcement_mode) if pa.enforcement_mode else "Default",
-                    "parameters": dict(pa.parameters) if pa.parameters else {},
+                    "parameters": _to_serializable(dict(pa.parameters)) if pa.parameters else {},
                     "not_scopes": list(pa.not_scopes) if pa.not_scopes else [],
                     "identity": {
                         "type": str(pa.identity.type) if pa.identity and pa.identity.type else "",
@@ -83,9 +101,9 @@ def list_custom_policy_definitions(
                     "description": pd.description or "",
                     "policy_type": str(pd.policy_type) if pd.policy_type else "",
                     "mode": pd.mode or "",
-                    "policy_rule": pd.policy_rule if pd.policy_rule else {},
-                    "parameters": dict(pd.parameters) if pd.parameters else {},
-                    "metadata": dict(pd.metadata) if pd.metadata else {},
+                    "policy_rule": _to_serializable(pd.policy_rule) if pd.policy_rule else {},
+                    "parameters": _to_serializable(dict(pd.parameters)) if pd.parameters else {},
+                    "metadata": _to_serializable(dict(pd.metadata)) if pd.metadata else {},
                 }
             )
         logger.info("Found %d custom policy definition(s)", len(definitions))
@@ -120,12 +138,12 @@ def list_custom_policy_set_definitions(
                     "policy_definitions": [
                         {
                             "policyDefinitionId": ref.policy_definition_id,
-                            "parameters": dict(ref.parameters) if ref.parameters else {},
+                            "parameters": _to_serializable(dict(ref.parameters)) if ref.parameters else {},
                         }
                         for ref in (psd.policy_definitions or [])
                     ],
-                    "parameters": dict(psd.parameters) if psd.parameters else {},
-                    "metadata": dict(psd.metadata) if psd.metadata else {},
+                    "parameters": _to_serializable(dict(psd.parameters)) if psd.parameters else {},
+                    "metadata": _to_serializable(dict(psd.metadata)) if psd.metadata else {},
                 }
             )
         logger.info("Found %d custom policy set definition(s) (initiatives)", len(initiatives))
