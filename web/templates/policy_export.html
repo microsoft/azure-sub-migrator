@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Policy Export – Tenova{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Policy Export</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3><i class="bi bi-file-earmark-ruled me-2"></i>Azure Policy Export</h3>
+  <span class="text-body-secondary">Subscription: <code>{{ subscription_id }}</code></span>
+</div>
+
+<!-- Loading state -->
+<div id="loading-state">
+  <div class="card shadow-sm">
+    <div class="card-body text-center py-5">
+      <div class="spinner-border text-primary mb-3" role="status">
+        <span class="visually-hidden">Exporting…</span>
+      </div>
+      <h5>Exporting Azure Policy data…</h5>
+      <p class="text-body-secondary">This may take a minute. Collecting policy assignments, custom definitions, and initiatives.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Results state (hidden until complete) -->
+<div id="results-state" class="d-none">
+  <!-- Summary cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="card shadow-sm text-center border-primary">
+        <div class="card-body">
+          <h2 class="mb-1 text-primary" id="assignments-count">0</h2>
+          <div class="text-body-secondary">Policy Assignments</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card shadow-sm text-center border-warning">
+        <div class="card-body">
+          <h2 class="mb-1 text-warning" id="definitions-count">0</h2>
+          <div class="text-body-secondary">Custom Definitions</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card shadow-sm text-center border-info">
+        <div class="card-body">
+          <h2 class="mb-1 text-info" id="initiatives-count">0</h2>
+          <div class="text-body-secondary">Initiatives (Sets)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success alert -->
+  <div class="alert alert-success d-flex align-items-center">
+    <i class="bi bi-check-circle-fill me-2 fs-4"></i>
+    <div>
+      <strong>Export complete!</strong> All Azure Policy data has been captured. Download the JSON file to keep a backup before starting the tenant transfer.
+    </div>
+  </div>
+
+  <!-- Download button -->
+  <div class="text-center mb-4">
+    <a id="download-btn" href="#" class="btn btn-primary btn-lg">
+      <i class="bi bi-download me-2"></i>Download Policy Export (JSON)
+    </a>
+  </div>
+
+  <!-- Important notes -->
+  <div class="card shadow-sm border-warning">
+    <div class="card-header bg-warning bg-opacity-10 fw-semibold">
+      <i class="bi bi-exclamation-triangle me-2"></i>Important Notes
+    </div>
+    <div class="card-body">
+      <ul class="mb-0">
+        <li>All <strong>policy assignments</strong> are permanently deleted during tenant transfer.</li>
+        <li>All <strong>custom policy definitions</strong> and <strong>initiatives</strong> are permanently deleted during transfer.</li>
+        <li>Built-in policies from Microsoft are NOT included — only your custom definitions and all assignments.</li>
+        <li>After transfer, use the exported JSON to recreate policies in the target tenant via Azure CLI or Portal.</li>
+        <li class="mt-2"><strong>Keep this file safe</strong> — it cannot be regenerated after the transfer.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Error state (hidden unless failed) -->
+<div id="error-state" class="d-none">
+  <div class="alert alert-danger">
+    <i class="bi bi-x-circle me-2"></i>
+    <strong>Export failed:</strong> <span id="error-message"></span>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const TASK_ID = "{{ task_id }}";
+  const POLL_URL = "{{ url_for('main.api_task_status', task_id=task_id) }}";
+  const DOWNLOAD_URL = "{{ url_for('main.policy_download', task_id=task_id) }}";
+
+  function pollTask() {
+    fetch(POLL_URL)
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === "completed" && data.policy_export) {
+          document.getElementById("loading-state").classList.add("d-none");
+          document.getElementById("results-state").classList.remove("d-none");
+
+          const exp = data.policy_export;
+          document.getElementById("assignments-count").textContent = exp.policy_assignments_count || 0;
+          document.getElementById("definitions-count").textContent = exp.custom_definitions_count || 0;
+          document.getElementById("initiatives-count").textContent = exp.initiatives_count || 0;
+          document.getElementById("download-btn").href = DOWNLOAD_URL;
+        } else if (data.status === "failed") {
+          document.getElementById("loading-state").classList.add("d-none");
+          document.getElementById("error-state").classList.remove("d-none");
+          document.getElementById("error-message").textContent = data.error || "Unknown error";
+        } else {
+          setTimeout(pollTask, 3000);
+        }
+      })
+      .catch(() => setTimeout(pollTask, 5000));
+  }
+
+  pollTask();
+</script>
+{% endblock %}
