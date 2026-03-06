@@ -64,6 +64,11 @@ IMPACTED_RESOURCE_TYPES: list[str] = [
     # Disk Encryption Sets with CMK need identity + role fix.
     "Microsoft.Compute/diskEncryptionSets",
 
+    # ── Azure Arc ──────────────────────────────────────────────────
+    # Arc-connected machines and their extensions have tenant-bound identities.
+    "Microsoft.HybridCompute/machines",
+    "Microsoft.HybridCompute/machines/extensions",
+
     # ── Azure Policy ───────────────────────────────────────────────
     # All policy objects (definitions, assignments, exemptions) are deleted.
     "Microsoft.Authorization/policyAssignments",
@@ -246,6 +251,20 @@ REQUIRED_ACTIONS: dict[str, dict[str, str]] = {
         "pre": "Document the Key Vault and key URI used for customer-managed key (CMK) encryption.",
         "post": "Disable and re-enable the system-assigned managed identity. Recreate Key Vault access role assignments (Key Vault Crypto Service Encryption User).",
         "doc_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption",
+    },
+
+    # ── Azure Arc ──────────────────────────────────────────────────
+    "Microsoft.HybridCompute/machines": {
+        "timing": "both",
+        "pre": "Document the Arc agent configuration and connected service principal.",
+        "post": "Disconnect and re-onboard the Arc agent to the target tenant. The machine's managed identity is broken after transfer.",
+        "doc_url": "https://learn.microsoft.com/en-us/azure/azure-arc/servers/overview",
+    },
+    "Microsoft.HybridCompute/machines/extensions": {
+        "timing": "post",
+        "pre": "",
+        "post": "Remove and reinstall Arc VM extensions after re-onboarding the agent to the target tenant.",
+        "doc_url": "https://learn.microsoft.com/en-us/azure/azure-arc/servers/manage-vm-extensions",
     },
 
     # ── Azure Policy ───────────────────────────────────────────────

@@ -97,9 +97,15 @@ def scan_subscription(
         for resource in client.resources.list():
             resource_type = resource.type or ""
             resource_id = resource.id or ""
+
+            # For child resources (e.g. VM extensions), build a display
+            # name from the resource ID so "ArcBox-Win2K22/AzureMonitorWindowsAgent"
+            # is shown instead of just "AzureMonitorWindowsAgent".
+            display_name = _extract_display_name(resource_id, resource.name)
+
             entry: dict[str, Any] = {
                 "id": resource_id,
-                "name": resource.name,
+                "name": display_name,
                 "type": resource_type,
                 "location": resource.location,
                 "resource_group": _extract_resource_group(resource_id),
@@ -496,3 +502,31 @@ def _extract_resource_group(resource_id: str | None) -> str:
         return parts[idx + 1]
     except (ValueError, IndexError):
         return ""
+
+
+def _extract_display_name(resource_id: str | None, fallback_name: str | None) -> str:
+    """Build a display name for a resource from its ARM ID.
+
+    For top-level resources the SDK ``name`` is fine, but for child
+    resources (e.g. VM extensions) the SDK returns only the leaf name
+    (``AzureMonitorWindowsAgent``).  This helper extracts the full
+    name path from the resource ID so the user sees
+    ``ArcBox-Win2K22/AzureMonitorWindowsAgent`` instead.
+    """
+    name = fallback_name or ""
+    if not resource_id:
+        return name
+    # Find the provider segment and take everything after the resource type
+    parts = resource_id.split("/")
+    try:
+        idx = [p.lower() for p in parts].index("providers")
+        # After providers: provider/type/name[/childType/childName/...]
+        after_provider = parts[idx + 1 :]  # e.g. [Provider, Type, Name, ChildType, ChildName]
+        # Names sit at odd positions (0-indexed from after_provider):
+        # idx 0 = provider, 1 = type, 2 = name, 3 = childType, 4 = childName, …
+        name_parts = [after_provider[i] for i in range(2, len(after_provider), 2)]
+        if name_parts:
+            return "/".join(name_parts)
+    except (ValueError, IndexError):
+        pass
+    return name

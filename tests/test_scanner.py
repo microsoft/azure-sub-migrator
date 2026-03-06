@@ -8,6 +8,7 @@ from tenova.scanner import (
     _collect_lock_items,
     _collect_policy_items,
     _collect_rbac_items,
+    _extract_display_name,
     _extract_resource_group,
     _is_impacted,
     list_subscriptions,
@@ -31,6 +32,17 @@ class TestHelpers:
 
     def test_is_impacted_case_insensitive(self):
         assert _is_impacted("microsoft.keyvault/vaults") is True
+
+    def test_display_name_top_level_resource(self):
+        rid = "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
+        assert _extract_display_name(rid, "vm1") == "vm1"
+
+    def test_display_name_child_resource(self):
+        rid = "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/ArcBox-Win2K22/extensions/AzureMonitorWindowsAgent"
+        assert _extract_display_name(rid, "AzureMonitorWindowsAgent") == "ArcBox-Win2K22/AzureMonitorWindowsAgent"
+
+    def test_display_name_none_id(self):
+        assert _extract_display_name(None, "fallback") == "fallback"
 
 
 class TestListSubscriptions:
