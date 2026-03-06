@@ -29,7 +29,7 @@ from azure.mgmt.resource.locks import ManagementLockClient
 from azure.mgmt.resource.policy import PolicyClient
 from azure.mgmt.subscription import SubscriptionClient
 
-from tenova.constants import IMPACTED_RESOURCE_TYPES, REQUIRED_ACTIONS
+from tenova.constants import IMPACTED_RESOURCE_TYPES, REQUIRED_ACTIONS, TRANSFER_NOTES
 from tenova.exceptions import ResourceScanError
 from tenova.logger import get_logger
 
@@ -165,7 +165,11 @@ def scan_subscription(
         if lock_items:
             logger.info("Added %d lock item(s) to requires-action", len(lock_items))
 
-        return {"transfer_safe": transfer_safe, "requires_action": requires_action}
+        return {
+            "transfer_safe": transfer_safe,
+            "requires_action": requires_action,
+            "transfer_notes": TRANSFER_NOTES,
+        }
 
     except Exception as exc:
         raise ResourceScanError(f"Failed to scan subscription {subscription_id}: {exc}") from exc

@@ -86,6 +86,13 @@ class TestScanSubscription:
         assert "learn.microsoft.com" in result["requires_action"][0]["doc_url"]
         assert "known impacted type" in result["requires_action"][0]["detection"]
 
+        # Transfer notes are always included (tenant-level items only)
+        assert "transfer_notes" in result
+        assert isinstance(result["transfer_notes"], dict)
+        assert len(result["transfer_notes"]) == 2
+        assert "App Registrations" in result["transfer_notes"]
+        assert "Entra ID Access Reviews" in result["transfer_notes"]
+
     @patch("tenova.scanner._collect_lock_items", return_value=[])
     @patch("tenova.scanner._collect_rbac_items", return_value=[])
     @patch("tenova.scanner._collect_policy_items", return_value=[])

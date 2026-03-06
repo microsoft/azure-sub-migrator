@@ -388,25 +388,12 @@ REQUIRED_ACTIONS: dict[str, dict[str, str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# Cross-tenant transfer notes (applies to ALL resources)
+# Tenant-level transfer notes — items that live in Entra ID (not the
+# subscription) and therefore CANNOT be discovered by the scanner APIs.
+# Subscription-scoped items (RBAC, custom roles, locks, policies) are
+# already surfaced in the Requires Action table via live API discovery.
 # ---------------------------------------------------------------------------
 TRANSFER_NOTES: dict[str, str] = {
-    "RBAC": (
-        "ALL role assignments in the subscription are permanently deleted "
-        "during transfer. Export BEFORE transfer. Recreate in the target tenant AFTER."
-    ),
-    "Custom Roles": (
-        "ALL custom role definitions are permanently deleted. Export BEFORE "
-        "transfer and recreate in the target tenant AFTER."
-    ),
-    "System Managed Identities": (
-        "System-assigned managed identities on ALL resources are broken. "
-        "You must disable and re-enable them AFTER the transfer."
-    ),
-    "Resource Locks": (
-        "Resource locks should be exported BEFORE transfer as they may "
-        "need to be recreated AFTER."
-    ),
     "App Registrations": (
         "App registrations live in the Entra ID tenant, not the subscription. "
         "If subscription resources depend on app registrations (e.g. App Service "

@@ -222,6 +222,21 @@ def scan(ctx: click.Context, subscription_id: str) -> None:
 
     console.print(table_safe)
     console.print(table_action)
+
+    # Transfer notes — tenant-level warnings
+    if report.get("transfer_notes"):
+        from rich.panel import Panel
+
+        notes_lines = []
+        for key, note in report["transfer_notes"].items():
+            notes_lines.append(f"[bold yellow]⚠ {key}:[/] {note}")
+        console.print(Panel(
+            "\n\n".join(notes_lines),
+            title="[bold]Tenant-Level Impacts[/]",
+            subtitle="These apply to EVERY cross-tenant transfer",
+            border_style="yellow",
+        ))
+
     console.print(
         f"\n[bold]Summary:[/] {len(report['transfer_safe'])} transfer-safe, "
         f"{len(report['requires_action'])} requires-action resources."

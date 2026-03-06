@@ -68,6 +68,15 @@
   <a href="https://learn.microsoft.com/en-us/azure/role-based-access-control/transfer-subscription" target="_blank">Learn more</a>
 </div>
 
+<!-- Transfer Notes — tenant-level warnings (hidden until scan completes) -->
+<div id="transfer-notes" class="card border-warning mb-4" style="display:none;">
+  <div class="card-header bg-warning text-dark">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Tenant-Level Impacts</strong>
+    <span class="small ms-2">— These apply to <em>every</em> cross-tenant transfer regardless of which resources are in the subscription.</span>
+  </div>
+  <ul class="list-group list-group-flush" id="transfer-notes-list"></ul>
+</div>
+
 <!-- Tabs for transfer-safe / requires-action tables -->
 <div id="result-tables" style="display:none;">
   <ul class="nav nav-tabs" role="tablist">
@@ -152,6 +161,22 @@
     document.getElementById('requires-action-count').textContent = data.requires_action_count;
     document.getElementById('summary-cards').style.display = '';
     document.getElementById('info-note').style.display = '';
+
+    // Transfer notes panel
+    const notes = data.transfer_notes || {};
+    const noteKeys = Object.keys(notes);
+    if (noteKeys.length > 0) {
+      const noteList = document.getElementById('transfer-notes-list');
+      noteList.innerHTML = '';
+      noteKeys.forEach(key => {
+        noteList.insertAdjacentHTML('beforeend',
+          `<li class="list-group-item bg-dark text-light">
+            <strong class="text-warning"><i class="bi bi-exclamation-circle me-1"></i>${esc(key)}:</strong>
+            <span class="ms-1">${esc(notes[key])}</span>
+          </li>`);
+      });
+      document.getElementById('transfer-notes').style.display = '';
+    }
 
     // Transfer-safe table
     const safeBody = document.querySelector('#transferSafeTable tbody');
