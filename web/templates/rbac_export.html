@@ -98,7 +98,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
   const TASK_ID = "{{ task_id }}";
   const POLL_URL = "{{ url_for('main.api_task_status', task_id=task_id) }}";
   const DOWNLOAD_URL = "{{ url_for('main.rbac_download', task_id=task_id) }}";

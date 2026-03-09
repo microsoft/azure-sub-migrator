@@ -62,7 +62,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   const POLL_URL = "{{ url_for('main.api_task_status', task_id=task_id) }}";
   let polling = null;

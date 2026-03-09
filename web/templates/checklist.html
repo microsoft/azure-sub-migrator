@@ -174,7 +174,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   const STORAGE_KEY = 'migration_checklist_{{ task_id }}';
   const scanData = {{ scan_data | tojson }};

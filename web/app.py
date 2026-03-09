@@ -7,7 +7,7 @@ import secrets
 from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, Response
+from flask import Flask, Response, g
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -74,9 +74,19 @@ def create_app() -> Flask:
     csrf.init_app(app)
     csrf.exempt(auth_bp)  # OAuth routes use their own state parameter
 
+    # ── CSP nonce (generated per-request for inline scripts) ─────────
+    @app.before_request
+    def _generate_csp_nonce() -> None:
+        g.csp_nonce = secrets.token_urlsafe(16)
+
+    @app.context_processor
+    def _inject_csp_nonce() -> dict:
+        return {"csp_nonce": getattr(g, "csp_nonce", "")}
+
     # ── Security headers (applied to every response) ─────────────────
     @app.after_request
     def _set_security_headers(response: Response) -> Response:
+        nonce = getattr(g, "csp_nonce", "")
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
@@ -88,7 +98,7 @@ def create_app() -> Flask:
         )
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' https://cdn.jsdelivr.net https://code.jquery.com https://cdn.datatables.net; "
+            f"script-src 'nonce-{nonce}' 'self' https://cdn.jsdelivr.net https://code.jquery.com https://cdn.datatables.net; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.datatables.net; "
             "font-src 'self' https://cdn.jsdelivr.net; "
             "img-src 'self' data:; "
