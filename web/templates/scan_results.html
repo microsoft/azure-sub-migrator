@@ -109,6 +109,11 @@
     </div>
     <!-- Requires Action -->
     <div class="tab-pane fade" id="requiresActionTab">
+      <div class="d-flex justify-content-end mb-2">
+        <button id="expand-all-btn" class="btn btn-sm btn-outline-secondary" style="display:none;">
+          <i class="bi bi-arrows-expand me-1"></i>Expand All
+        </button>
+      </div>
       <table class="table table-sm table-hover" id="requiresActionTable">
         <thead>
           <tr>
@@ -155,9 +160,13 @@
   let polling = null;
 
   function renderResults(data) {
-    // Derive counts from arrays (works for both API response and server-side render)
-    const safeCount = (data.transfer_safe || []).length;
-    const actionCount = (data.requires_action || []).length;
+    // Count top-level resources + nested children for accurate totals
+    const safeList = data.transfer_safe || [];
+    const actionList = data.requires_action || [];
+    let totalChildren = 0;
+    actionList.forEach(r => { totalChildren += (r.children || []).length; });
+    const safeCount = safeList.length;
+    const actionCount = actionList.length + totalChildren;
 
     // Summary cards
     document.getElementById('total-count').textContent = safeCount + actionCount;
@@ -185,44 +194,105 @@
     // Transfer-safe table
     const safeBody = document.querySelector('#transferSafeTable tbody');
     safeBody.innerHTML = '';
-    (data.transfer_safe || []).forEach(r => {
+    safeList.forEach(r => {
       safeBody.insertAdjacentHTML('beforeend', `<tr>
         <td>${esc(r.name)}</td><td><code>${esc(r.type)}</code></td>
         <td>${esc(r.resource_group)}</td><td>${esc(r.location)}</td></tr>`);
     });
 
-    // Requires-action table
+    // Requires-action table — hierarchical
     const actBody = document.querySelector('#requiresActionTable tbody');
     actBody.innerHTML = '';
-    (data.requires_action || []).forEach(r => {
+    let rowIdx = 0;
+    actionList.forEach(r => {
+      const children = r.children || [];
+      const hasChildren = children.length > 0;
+      const groupId = 'grp-' + rowIdx;
+      rowIdx++;
+
+      // Parent / top-level row
       const timing = (r.timing || 'post').toUpperCase();
-      let timingBadge = '';
-      if (timing === 'PRE') {
-        timingBadge = '<span class="badge bg-danger">PRE</span>';
-      } else if (timing === 'POST') {
-        timingBadge = '<span class="badge bg-warning text-dark">POST</span>';
-      } else {
-        timingBadge = '<span class="badge bg-danger me-1">PRE</span><span class="badge bg-warning text-dark">POST</span>';
-      }
-      const docUrl = r.doc_url || '';
-      const docLink = docUrl
-        ? `<a href="${esc(docUrl)}" target="_blank" class="btn btn-sm btn-outline-info"><i class="bi bi-box-arrow-up-right me-1"></i>Docs</a>`
-        : '—';
-      actBody.insertAdjacentHTML('beforeend', `<tr>
-        <td>${esc(r.name)}</td><td><code>${esc(r.type)}</code></td>
+      const timingBadge = renderTimingBadge(timing);
+      const docLink = renderDocLink(r.doc_url);
+      const promotedBadge = r.promoted
+        ? '<span class="badge bg-info text-dark ms-1" title="Promoted because child resources require action"><i class="bi bi-arrow-up-circle me-1"></i>promoted</span>'
+        : '';
+      const toggleBtn = hasChildren
+        ? `<button class="btn btn-sm btn-outline-secondary me-1 toggle-children" data-group="${groupId}" title="Toggle ${children.length} child resource(s)"><i class="bi bi-chevron-right"></i> ${children.length}</button>`
+        : '';
+
+      actBody.insertAdjacentHTML('beforeend', `<tr class="${hasChildren ? 'table-active' : ''}">
+        <td>${toggleBtn}${esc(r.name)}${promotedBadge}</td>
+        <td><code>${esc(r.type)}</code></td>
         <td>${esc(r.resource_group)}</td>
         <td>${timingBadge}</td>
         <td class="small">${esc(r.pre_action || '—')}</td>
         <td class="small">${esc(r.post_action || '—')}</td>
         <td>${docLink}</td></tr>`);
+
+      // Child rows (hidden by default)
+      children.forEach(c => {
+        const cTiming = (c.timing || 'post').toUpperCase();
+        const cTimingBadge = renderTimingBadge(cTiming);
+        const cDocLink = renderDocLink(c.doc_url);
+        actBody.insertAdjacentHTML('beforeend', `<tr class="child-row ${groupId}" style="display:none;">
+          <td class="ps-4"><i class="bi bi-arrow-return-right text-secondary me-1"></i>${esc(c.name)}</td>
+          <td><code>${esc(c.type)}</code></td>
+          <td>${esc(c.resource_group)}</td>
+          <td>${cTimingBadge}</td>
+          <td class="small">${esc(c.pre_action || '—')}</td>
+          <td class="small">${esc(c.post_action || '—')}</td>
+          <td>${cDocLink}</td></tr>`);
+      });
     });
 
-    // Init DataTables
+    // Toggle child rows on click
+    actBody.querySelectorAll('.toggle-children').forEach(btn => {
+      btn.addEventListener('click', function () {
+        const gid = this.dataset.group;
+        const rows = actBody.querySelectorAll('.' + gid);
+        const icon = this.querySelector('i');
+        const visible = rows[0] && rows[0].style.display !== 'none';
+        rows.forEach(row => { row.style.display = visible ? 'none' : ''; });
+        icon.className = visible ? 'bi bi-chevron-right' : 'bi bi-chevron-down';
+      });
+    });
+
+    // Expand All / Collapse All button
+    const expandBtn = document.getElementById('expand-all-btn');
+    if (actBody.querySelector('.toggle-children')) {
+      expandBtn.style.display = '';
+      let allExpanded = false;
+      expandBtn.addEventListener('click', function () {
+        allExpanded = !allExpanded;
+        actBody.querySelectorAll('.child-row').forEach(row => {
+          row.style.display = allExpanded ? '' : 'none';
+        });
+        actBody.querySelectorAll('.toggle-children i').forEach(icon => {
+          icon.className = allExpanded ? 'bi bi-chevron-down' : 'bi bi-chevron-right';
+        });
+        this.innerHTML = allExpanded
+          ? '<i class="bi bi-arrows-collapse me-1"></i>Collapse All'
+          : '<i class="bi bi-arrows-expand me-1"></i>Expand All';
+      });
+    }
+
+    // Init DataTables (disable on requires-action to preserve hierarchy)
     $('#transferSafeTable').DataTable({ pageLength: 25 });
-    $('#requiresActionTable').DataTable({ pageLength: 25 });
 
     document.getElementById('result-tables').style.display = '';
     document.getElementById('download-plan').href = PLAN_URL;
+  }
+
+  function renderTimingBadge(timing) {
+    if (timing === 'PRE') return '<span class="badge bg-danger">PRE</span>';
+    if (timing === 'POST') return '<span class="badge bg-warning text-dark">POST</span>';
+    return '<span class="badge bg-danger me-1">PRE</span><span class="badge bg-warning text-dark">POST</span>';
+  }
+
+  function renderDocLink(url) {
+    if (!url) return '—';
+    return `<a href="${esc(url)}" target="_blank" class="btn btn-sm btn-outline-info"><i class="bi bi-box-arrow-up-right me-1"></i>Docs</a>`;
   }
 
   function esc(s) {

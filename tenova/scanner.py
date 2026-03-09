@@ -171,6 +171,14 @@ def scan_subscription(
         if lock_items:
             logger.info("Added %d lock item(s) to requires-action", len(lock_items))
 
+        # ── Step 6: Build hierarchical parent-child view ──
+        # If a child resource (e.g. VM extension) requires action but its
+        # parent (e.g. VM) was classified as transfer-safe, promote the
+        # parent into requires_action and nest children underneath it.
+        transfer_safe, requires_action = _build_hierarchy(
+            transfer_safe, requires_action,
+        )
+
         return {
             "transfer_safe": transfer_safe,
             "requires_action": requires_action,
@@ -490,6 +498,135 @@ def _collect_lock_items(
 def _is_impacted(resource_type: str) -> bool:
     """Check whether *resource_type* is in the known-impacted static list."""
     return resource_type.lower() in {rt.lower() for rt in IMPACTED_RESOURCE_TYPES}
+
+
+def _find_parent_id(resource_id: str) -> str | None:
+    """Return the ARM resource ID of the parent resource, or None for top-level.
+
+    Azure child resources have IDs like::
+
+        .../Microsoft.Compute/virtualMachines/vm1/extensions/ext1
+
+    The parent ID is everything up to (but not including) the last
+    ``/childType/childName`` segment::
+
+        .../Microsoft.Compute/virtualMachines/vm1
+
+    Subscription-wide items (policies, RBAC, locks) have no "providers"
+    segment in the format we need, so return None for those.
+    """
+    if not resource_id:
+        return None
+    parts = resource_id.split("/")
+    try:
+        idx = [p.lower() for p in parts].index("providers")
+    except ValueError:
+        return None
+    # After "providers": provider/type/name[/childType/childName/...]
+    after = parts[idx + 1:]  # e.g. [Provider, Type, Name, ChildType, ChildName]
+    # A top-level resource has exactly 3 segments: provider, type, name
+    # A child resource has 5+: provider, type, name, childType, childName, ...
+    if len(after) <= 3:
+        return None  # top-level → no parent
+    # Parent ID = everything up to (but not including) last 2 segments
+    parent_parts = parts[: -2]
+    return "/".join(parent_parts)
+
+
+def _build_hierarchy(
+    transfer_safe: list[dict[str, Any]],
+    requires_action: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Nest child resources under their parents and promote parents.
+
+    Rules:
+    1. If a child resource is in *requires_action* and its parent is in
+       *transfer_safe*, the parent is **promoted** to *requires_action*
+       (tagged as promoted, with its own timing set to ``"post"`` and a
+       note that it was promoted due to its children).
+    2. Child resources are nested inside their parent's ``children`` list
+       and removed from the top-level *requires_action*.
+    3. If a child's parent is already in *requires_action* the children
+       are simply nested — no promotion needed.
+    4. Resources without a discoverable parent (subscription-wide policy,
+       RBAC, locks) remain as flat top-level entries.
+    """
+    # Index all resources by lower-cased ID for fast lookup
+    safe_by_id: dict[str, dict[str, Any]] = {}
+    for r in transfer_safe:
+        rid = (r.get("id") or "").lower()
+        if rid:
+            safe_by_id[rid] = r
+
+    action_by_id: dict[str, dict[str, Any]] = {}
+    for r in requires_action:
+        rid = (r.get("id") or "").lower()
+        if rid:
+            action_by_id[rid] = r
+
+    # Track which requires_action entries become children (to remove later)
+    nested_ids: set[str] = set()
+    # Track which transfer_safe entries get promoted (to remove later)
+    promoted_ids: set[str] = set()
+
+    # Pass 1 — find children in requires_action whose parent exists
+    for r in list(requires_action):
+        rid = (r.get("id") or "").lower()
+        parent_id = _find_parent_id(rid)
+        if not parent_id:
+            continue
+        parent_id_lower = parent_id.lower()
+
+        # Parent already in requires_action — just nest
+        if parent_id_lower in action_by_id:
+            parent = action_by_id[parent_id_lower]
+            parent.setdefault("children", []).append(r)
+            nested_ids.add(rid)
+            continue
+
+        # Parent in transfer_safe — promote it
+        if parent_id_lower in safe_by_id:
+            parent = safe_by_id[parent_id_lower]
+            parent.setdefault("children", []).append(r)
+            if parent_id_lower not in promoted_ids:
+                # Mark as promoted (not inherently impacted itself)
+                parent["promoted"] = True
+                parent["timing"] = "post"
+                parent["pre_action"] = ""
+                parent["post_action"] = (
+                    "This resource has child resources that require action. "
+                    "See children below."
+                )
+                parent["detection"] = "child resource requires action"
+                parent["doc_url"] = (
+                    "https://learn.microsoft.com/en-us/azure/role-based-access-control/"
+                    "transfer-subscription"
+                )
+                # Move to action_by_id so subsequent children find it
+                action_by_id[parent_id_lower] = parent
+                promoted_ids.add(parent_id_lower)
+            nested_ids.add(rid)
+
+    # Build new flat lists excluding nested/promoted items
+    new_safe = [
+        r for r in transfer_safe
+        if (r.get("id") or "").lower() not in promoted_ids
+    ]
+    new_action = [
+        r for r in requires_action
+        if (r.get("id") or "").lower() not in nested_ids
+    ]
+    # Add promoted parents (they're not in the original requires_action list)
+    for pid in promoted_ids:
+        parent = action_by_id[pid]
+        new_action.append(parent)
+
+    logger.info(
+        "Hierarchy: promoted %d parent(s), nested %d child(ren)",
+        len(promoted_ids),
+        len(nested_ids),
+    )
+    return new_safe, new_action
 
 
 def _extract_resource_group(resource_id: str | None) -> str:

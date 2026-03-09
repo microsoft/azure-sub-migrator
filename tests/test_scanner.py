@@ -5,11 +5,13 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from tenova.scanner import (
+    _build_hierarchy,
     _collect_lock_items,
     _collect_policy_items,
     _collect_rbac_items,
     _extract_display_name,
     _extract_resource_group,
+    _find_parent_id,
     _is_impacted,
     list_subscriptions,
     scan_subscription,
@@ -445,3 +447,192 @@ class TestCollectLockItems:
         result = _collect_lock_items(mock_credential, "sub-1")
 
         assert result == []
+
+
+class TestFindParentId:
+    def test_top_level_resource_returns_none(self):
+        rid = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
+        assert _find_parent_id(rid) is None
+
+    def test_child_resource_returns_parent(self):
+        rid = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1/extensions/ext1"
+        expected = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
+        assert _find_parent_id(rid) == expected
+
+    def test_deeply_nested_returns_immediate_parent(self):
+        rid = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1/extensions/ext1/subThings/sub1"
+        expected = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1/extensions/ext1"
+        assert _find_parent_id(rid) == expected
+
+    def test_empty_string_returns_none(self):
+        assert _find_parent_id("") is None
+
+    def test_none_returns_none(self):
+        assert _find_parent_id(None) is None
+
+    def test_no_providers_returns_none(self):
+        assert _find_parent_id("/subscriptions/s/resourceGroups/rg1") is None
+
+
+class TestBuildHierarchy:
+    def test_child_in_action_promotes_parent_from_safe(self):
+        """If a child requires action, its parent moves from safe to action."""
+        vm = {
+            "id": "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1",
+            "name": "vm1",
+            "type": "Microsoft.Compute/virtualMachines",
+            "location": "eastus",
+            "resource_group": "rg1",
+        }
+        ext = {
+            "id": "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1/extensions/ext1",
+            "name": "vm1/ext1",
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "location": "eastus",
+            "resource_group": "rg1",
+            "timing": "post",
+            "pre_action": "",
+            "post_action": "Reinstall extension",
+            "doc_url": "https://example.com",
+            "detection": "known impacted type",
+        }
+
+        new_safe, new_action = _build_hierarchy([vm], [ext])
+
+        # VM should be promoted out of safe
+        assert len(new_safe) == 0
+        # VM should appear in action with ext nested inside
+        assert len(new_action) == 1
+        parent = new_action[0]
+        assert parent["name"] == "vm1"
+        assert parent["promoted"] is True
+        assert len(parent["children"]) == 1
+        assert parent["children"][0]["name"] == "vm1/ext1"
+
+    def test_child_nested_under_parent_already_in_action(self):
+        """If parent is already in requires_action, child nests under it."""
+        kv = {
+            "id": "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/kv1",
+            "name": "kv1",
+            "type": "Microsoft.KeyVault/vaults",
+            "location": "eastus",
+            "resource_group": "rg1",
+            "timing": "both",
+            "pre_action": "Export access policies",
+            "post_action": "Update tenant ID",
+            "doc_url": "https://example.com",
+            "detection": "known impacted type",
+        }
+        # Hypothetical child of Key Vault
+        child = {
+            "id": "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/kv1/secrets/sec1",
+            "name": "kv1/sec1",
+            "type": "Microsoft.KeyVault/vaults/secrets",
+            "location": "eastus",
+            "resource_group": "rg1",
+            "timing": "post",
+            "pre_action": "",
+            "post_action": "Rotate secret",
+            "doc_url": "https://example.com",
+            "detection": "known impacted type",
+        }
+
+        new_safe, new_action = _build_hierarchy([], [kv, child])
+
+        assert len(new_safe) == 0
+        # Only the parent should be top-level, with child nested
+        assert len(new_action) == 1
+        assert new_action[0]["name"] == "kv1"
+        assert len(new_action[0]["children"]) == 1
+        assert new_action[0]["children"][0]["name"] == "kv1/sec1"
+
+    def test_multiple_children_nest_under_same_parent(self):
+        """Multiple children of the same VM all nest under one promoted parent."""
+        vm = {
+            "id": "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1",
+            "name": "vm1",
+            "type": "Microsoft.Compute/virtualMachines",
+            "location": "eastus",
+            "resource_group": "rg1",
+        }
+        ext1 = {
+            "id": "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1/extensions/ext1",
+            "name": "vm1/ext1",
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "location": "eastus",
+            "resource_group": "rg1",
+            "timing": "post",
+            "pre_action": "",
+            "post_action": "Reinstall",
+            "doc_url": "",
+            "detection": "known impacted type",
+        }
+        ext2 = {
+            "id": "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1/extensions/ext2",
+            "name": "vm1/ext2",
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "location": "eastus",
+            "resource_group": "rg1",
+            "timing": "post",
+            "pre_action": "",
+            "post_action": "Reinstall",
+            "doc_url": "",
+            "detection": "known impacted type",
+        }
+
+        new_safe, new_action = _build_hierarchy([vm], [ext1, ext2])
+
+        assert len(new_safe) == 0
+        assert len(new_action) == 1
+        assert new_action[0]["name"] == "vm1"
+        assert len(new_action[0]["children"]) == 2
+
+    def test_no_children_leaves_lists_unchanged(self):
+        """Resources without parent-child relationships stay flat."""
+        vm = {
+            "id": "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1",
+            "name": "vm1",
+            "type": "Microsoft.Compute/virtualMachines",
+            "location": "eastus",
+            "resource_group": "rg1",
+        }
+        kv = {
+            "id": "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/kv1",
+            "name": "kv1",
+            "type": "Microsoft.KeyVault/vaults",
+            "location": "eastus",
+            "resource_group": "rg1",
+            "timing": "both",
+            "pre_action": "Export",
+            "post_action": "Update",
+            "doc_url": "",
+            "detection": "known impacted type",
+        }
+
+        new_safe, new_action = _build_hierarchy([vm], [kv])
+
+        assert len(new_safe) == 1
+        assert new_safe[0]["name"] == "vm1"
+        assert len(new_action) == 1
+        assert new_action[0]["name"] == "kv1"
+        assert "children" not in new_action[0]
+
+    def test_subscription_wide_items_remain_flat(self):
+        """Policy/RBAC/lock items (no providers in ID) stay flat."""
+        policy = {
+            "id": "/subscriptions/sub-1/providers/Microsoft.Authorization/policyAssignments",
+            "name": "3 policy assignments",
+            "type": "Microsoft.Authorization/policyAssignments",
+            "location": "subscription-wide",
+            "resource_group": "—",
+            "timing": "pre",
+            "pre_action": "Export",
+            "post_action": "Reimport",
+            "doc_url": "",
+            "detection": "policy API",
+        }
+
+        new_safe, new_action = _build_hierarchy([], [policy])
+
+        assert len(new_action) == 1
+        assert new_action[0]["name"] == "3 policy assignments"

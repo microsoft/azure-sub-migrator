@@ -44,7 +44,9 @@ def generate_pdf(
 
     transfer_safe = scan_result.get("transfer_safe", [])
     requires_action = scan_result.get("requires_action", [])
-    total = len(transfer_safe) + len(requires_action)
+    # Count children nested inside parent entries
+    child_count = sum(len(r.get("children", [])) for r in requires_action)
+    total = len(transfer_safe) + len(requires_action) + child_count
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     pdf = FPDF()
@@ -73,7 +75,7 @@ def generate_pdf(
 
     _summary_row(pdf, "Total Resources", str(total))
     _summary_row(pdf, "Transfer-Safe", str(len(transfer_safe)), (34, 139, 34))
-    _summary_row(pdf, "Requires Action", str(len(requires_action)), (200, 50, 50))
+    _summary_row(pdf, "Requires Action", str(len(requires_action) + child_count), (200, 50, 50))
     pdf.ln(5)
 
     pdf.set_font("Helvetica", "I", 9)
@@ -132,18 +134,38 @@ def generate_pdf(
         _table_header(pdf, headers, col_widths, (200, 50, 50))
 
         pdf.set_font("Helvetica", "", 7)
-        for idx, r in enumerate(requires_action):
-            fill = idx % 2 == 0
+        row_num = 0
+        for r in requires_action:
+            fill = row_num % 2 == 0
             if fill:
                 pdf.set_fill_color(255, 245, 245)
             timing = (r.get("timing", "post") or "post").upper()
+            name = r.get("name", "")
+            children = r.get("children", [])
+            if children:
+                name = f"{name} (+{len(children)} sub-resource(s))"
             _table_row(pdf, [
-                r.get("name", ""),
+                name,
                 _short_type(r.get("type", "")),
                 timing,
                 r.get("pre_action", "") or "-",
                 r.get("post_action", "") or "-",
             ], col_widths, fill)
+            row_num += 1
+            # Render child rows indented
+            for child in children:
+                fill = row_num % 2 == 0
+                if fill:
+                    pdf.set_fill_color(255, 250, 250)
+                c_timing = (child.get("timing", "post") or "post").upper()
+                _table_row(pdf, [
+                    f"  >> {child.get('name', '')}",
+                    _short_type(child.get("type", "")),
+                    c_timing,
+                    child.get("pre_action", "") or "-",
+                    child.get("post_action", "") or "-",
+                ], col_widths, fill)
+                row_num += 1
     else:
         pdf.set_font("Helvetica", "I", 10)
         pdf.cell(0, 10, "No resources requiring action found.", new_x="LMARGIN", new_y="NEXT")
@@ -228,7 +250,9 @@ def generate_excel(
 
     transfer_safe = scan_result.get("transfer_safe", [])
     requires_action = scan_result.get("requires_action", [])
-    total = len(transfer_safe) + len(requires_action)
+    # Count children nested inside parent entries
+    child_count = sum(len(r.get("children", [])) for r in requires_action)
+    total = len(transfer_safe) + len(requires_action) + child_count
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     wb = Workbook()
@@ -268,7 +292,7 @@ def generate_excel(
     rows = [
         ("Total Resources", total),
         ("Transfer-Safe", len(transfer_safe)),
-        ("Requires Action", len(requires_action)),
+        ("Requires Action", len(requires_action) + child_count),
     ]
     for i, (label, count) in enumerate(rows, 7):
         ws_summary[f"A{i}"] = label
@@ -320,10 +344,16 @@ def generate_excel(
         cell.border = thin_border
         cell.alignment = Alignment(horizontal="center")
 
-    for row_idx, r in enumerate(requires_action, 2):
+    excel_row = 2
+    child_indent_fill = PatternFill(start_color="FFF0F0", end_color="FFF0F0", fill_type="solid")
+    for r in requires_action:
         timing = (r.get("timing", "post") or "post").upper()
+        children = r.get("children", [])
+        name = r.get("name", "")
+        if children:
+            name = f"{name}  (+{len(children)} sub-resource(s))"
         values = [
-            r.get("name", ""),
+            name,
             r.get("type", ""),
             r.get("resource_group", ""),
             timing,
@@ -331,9 +361,9 @@ def generate_excel(
             r.get("post_action", "") or "-",
             r.get("doc_url", "") or "-",
         ]
-        stripe = PatternFill(start_color="FFF5F5", end_color="FFF5F5", fill_type="solid") if row_idx % 2 == 0 else None
+        stripe = PatternFill(start_color="FFF5F5", end_color="FFF5F5", fill_type="solid") if excel_row % 2 == 0 else None
         for col_idx, val in enumerate(values, 1):
-            cell = ws_action.cell(row=row_idx, column=col_idx, value=val)
+            cell = ws_action.cell(row=excel_row, column=col_idx, value=val)
             cell.border = thin_border
             cell.alignment = wrap_align
             if stripe:
@@ -346,6 +376,35 @@ def generate_excel(
                     cell.font = Font(bold=True, color="CC6600")
                 else:
                     cell.font = Font(bold=True, color="CC9900")
+            # Bold parent name if it has children
+            if col_idx == 1 and children:
+                cell.font = Font(bold=True)
+        excel_row += 1
+        # Render child rows indented
+        for child in children:
+            c_timing = (child.get("timing", "post") or "post").upper()
+            c_values = [
+                f"    ↳ {child.get('name', '')}",
+                child.get("type", ""),
+                child.get("resource_group", ""),
+                c_timing,
+                child.get("pre_action", "") or "-",
+                child.get("post_action", "") or "-",
+                child.get("doc_url", "") or "-",
+            ]
+            for col_idx, val in enumerate(c_values, 1):
+                cell = ws_action.cell(row=excel_row, column=col_idx, value=val)
+                cell.border = thin_border
+                cell.alignment = wrap_align
+                cell.fill = child_indent_fill
+                if col_idx == 4:
+                    if c_timing == "PRE":
+                        cell.font = Font(bold=True, color="CC3333")
+                    elif c_timing == "BOTH":
+                        cell.font = Font(bold=True, color="CC6600")
+                    else:
+                        cell.font = Font(bold=True, color="CC9900")
+            excel_row += 1
 
     col_widths = [30, 35, 25, 10, 40, 40, 50]
     for col_idx, width in enumerate(col_widths, 1):
@@ -355,7 +414,7 @@ def generate_excel(
     if transfer_safe:
         ws_safe.auto_filter.ref = f"A1:{get_column_letter(len(safe_headers))}{len(transfer_safe) + 1}"
     if requires_action:
-        ws_action.auto_filter.ref = f"A1:{get_column_letter(len(action_headers))}{len(requires_action) + 1}"
+        ws_action.auto_filter.ref = f"A1:{get_column_letter(len(action_headers))}{excel_row - 1}"
 
     # Freeze header row on data sheets
     ws_safe.freeze_panes = "A2"

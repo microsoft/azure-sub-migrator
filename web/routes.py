@@ -119,6 +119,7 @@ def api_task_status(task_id: str):
         payload["transfer_safe"] = task.result.get("transfer_safe", [])
         payload["requires_action"] = task.result.get("requires_action", [])
         payload["transfer_notes"] = task.result.get("transfer_notes", {})
+        # Children are already nested inside parent entries by the scanner
     # Readiness results
     elif task.task_type == "readiness" and task.result:
         payload["readiness"] = task.result.get("readiness", {})
