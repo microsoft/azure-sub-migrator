@@ -36,6 +36,7 @@ dependencies = [
     "rich>=13.0",
     "pyyaml>=6.0",
     "flask>=3.0",
+    "flask-wtf>=1.2",
     "msal>=1.28",
     "gunicorn>=21.2",
     "fpdf2>=2.7",

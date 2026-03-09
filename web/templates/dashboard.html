@@ -52,18 +52,21 @@
           <td class="text-end">
             <div class="btn-group" role="group">
               <form method="POST" action="{{ url_for('main.scan') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <input type="hidden" name="subscription_id" value="{{ sub.subscription_id }}" />
                 <button type="submit" class="btn btn-outline-primary btn-sm">
                   <i class="bi bi-search me-1"></i>Scan
                 </button>
               </form>
               <form method="POST" action="{{ url_for('main.readiness') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <input type="hidden" name="subscription_id" value="{{ sub.subscription_id }}" />
                 <button type="submit" class="btn btn-outline-warning btn-sm">
                   <i class="bi bi-clipboard-check me-1"></i>Readiness
                 </button>
               </form>
               <form method="POST" action="{{ url_for('main.export_rbac_route') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <input type="hidden" name="subscription_id" value="{{ sub.subscription_id }}" />
                 <button type="submit" class="btn btn-outline-info btn-sm">
                   <i class="bi bi-shield-lock me-1"></i>Export RBAC

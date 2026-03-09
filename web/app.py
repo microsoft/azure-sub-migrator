@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import os
+import secrets
 from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask
+from flask import Flask, Response
+from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
+
+csrf = CSRFProtect()
 
 
 def create_app() -> Flask:
@@ -23,7 +27,21 @@ def create_app() -> Flask:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
     # ── Configuration ────────────────────────────────────────────────
-    app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+    # SECRET_KEY — fail fast if not set in production; auto-generate
+    # a random key for local dev so the app still starts.
+    flask_secret = os.environ.get("FLASK_SECRET_KEY")
+    if not flask_secret:
+        if os.environ.get("WEBSITE_HOSTNAME"):  # Azure App Service
+            raise RuntimeError(
+                "FLASK_SECRET_KEY must be set in App Service configuration"
+            )
+        flask_secret = secrets.token_hex(32)  # safe random for local dev
+    app.secret_key = flask_secret
+
+    # ── Secure cookie settings ───────────────────────────────────────
+    app.config["SESSION_COOKIE_SECURE"] = True       # only send over HTTPS
+    app.config["SESSION_COOKIE_HTTPONLY"] = True       # no JS access
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"     # CSRF protection
 
     # Session idle timeout (default 30 minutes)
     app.config["SESSION_IDLE_MINUTES"] = int(os.environ.get("SESSION_IDLE_MINUTES", "30"))
@@ -50,5 +68,31 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
+
+    # ── CSRF protection ──────────────────────────────────────────────
+    csrf.init_app(app)
+
+    # ── Security headers (applied to every response) ─────────────────
+    @app.after_request
+    def _set_security_headers(response: Response) -> Response:
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' https://cdn.jsdelivr.net https://code.jquery.com https://cdn.datatables.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.datatables.net; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'"
+        )
+        return response
 
     return app

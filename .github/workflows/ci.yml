@@ -25,6 +25,24 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+          pip install pip-audit cyclonedx-bom
+
+      - name: Lint (Ruff)
+        run: ruff check . --output-format=github
 
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short
+
+      - name: Dependency vulnerability scan (pip-audit)
+        run: pip-audit --strict
+
+      - name: Generate SBOM (CycloneDX)
+        if: matrix.python-version == '3.12'
+        run: cyclonedx-py environment -o sbom.json
+      
+      - name: Upload SBOM artifact
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json

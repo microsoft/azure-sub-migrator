@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from flask import (
     Blueprint,
     current_app,
@@ -19,6 +20,11 @@ from web.auth_web import login_required, get_access_token
 from web.tasks import fetch_subscriptions, get_task, start_scan, start_readiness_check, start_rbac_export
 
 main_bp = Blueprint("main", __name__)
+
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -61,9 +67,11 @@ def dashboard():
 @login_required
 def scan():
     """Start a background subscription scan."""
-    subscription_id = request.form.get("subscription_id", "")
+    subscription_id = request.form.get("subscription_id", "").strip()
     if not subscription_id:
         return jsonify({"error": "subscription_id is required"}), 400
+    if not _UUID_RE.match(subscription_id):
+        return jsonify({"error": "subscription_id must be a valid UUID"}), 400
 
     token = get_access_token()
     task_id = start_scan(token, subscription_id)
@@ -166,9 +174,11 @@ def migration_plan(task_id: str):
 @login_required
 def readiness():
     """Start a background readiness check."""
-    subscription_id = request.form.get("subscription_id", "")
+    subscription_id = request.form.get("subscription_id", "").strip()
     if not subscription_id:
         return jsonify({"error": "subscription_id is required"}), 400
+    if not _UUID_RE.match(subscription_id):
+        return jsonify({"error": "subscription_id must be a valid UUID"}), 400
 
     token = get_access_token()
     task_id = start_readiness_check(token, subscription_id)
@@ -220,9 +230,11 @@ def checklist(task_id: str):
 @login_required
 def export_rbac_route():
     """Start a background RBAC export."""
-    subscription_id = request.form.get("subscription_id", "")
+    subscription_id = request.form.get("subscription_id", "").strip()
     if not subscription_id:
         return jsonify({"error": "subscription_id is required"}), 400
+    if not _UUID_RE.match(subscription_id):
+        return jsonify({"error": "subscription_id must be a valid UUID"}), 400
 
     token = get_access_token()
     task_id = start_rbac_export(token, subscription_id)
