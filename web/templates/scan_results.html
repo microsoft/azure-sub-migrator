@@ -155,10 +155,14 @@
   let polling = null;
 
   function renderResults(data) {
+    // Derive counts from arrays (works for both API response and server-side render)
+    const safeCount = (data.transfer_safe || []).length;
+    const actionCount = (data.requires_action || []).length;
+
     // Summary cards
-    document.getElementById('total-count').textContent = data.transfer_safe_count + data.requires_action_count;
-    document.getElementById('transfer-safe-count').textContent = data.transfer_safe_count;
-    document.getElementById('requires-action-count').textContent = data.requires_action_count;
+    document.getElementById('total-count').textContent = safeCount + actionCount;
+    document.getElementById('transfer-safe-count').textContent = safeCount;
+    document.getElementById('requires-action-count').textContent = actionCount;
     document.getElementById('summary-cards').style.display = '';
     document.getElementById('info-note').style.display = '';
 
