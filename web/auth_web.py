@@ -16,6 +16,7 @@ import msal
 from flask import (
     Blueprint,
     current_app,
+    flash,
     redirect,
     render_template,
     request,
@@ -123,9 +124,11 @@ def login():
 @auth_bp.route("/callback")
 def callback():
     """Handle the redirect from Entra ID after user signs in."""
-    # Validate state
+    # Validate state — redirect gracefully so user can retry
     if request.args.get("state") != session.get("state"):
-        return "State mismatch – possible CSRF. Please try again.", 400
+        session.clear()
+        flash("Session expired. Please sign in again.", "warning")
+        return redirect(url_for("auth.login"))
 
     if "error" in request.args:
         return f"Auth error: {request.args['error_description']}", 400

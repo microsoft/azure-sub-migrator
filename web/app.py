@@ -39,7 +39,8 @@ def create_app() -> Flask:
     app.secret_key = flask_secret
 
     # ── Secure cookie settings ───────────────────────────────────────
-    app.config["SESSION_COOKIE_SECURE"] = True       # only send over HTTPS
+    is_azure = bool(os.environ.get("WEBSITE_HOSTNAME"))
+    app.config["SESSION_COOKIE_SECURE"] = is_azure    # Secure only on HTTPS (Azure)
     app.config["SESSION_COOKIE_HTTPONLY"] = True       # no JS access
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"     # CSRF protection
 
@@ -71,6 +72,7 @@ def create_app() -> Flask:
 
     # ── CSRF protection ──────────────────────────────────────────────
     csrf.init_app(app)
+    csrf.exempt(auth_bp)  # OAuth routes use their own state parameter
 
     # ── Security headers (applied to every response) ─────────────────
     @app.after_request
