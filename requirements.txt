@@ -15,6 +15,7 @@ openpyxl>=3.1
 
 # Web UI
 flask>=3.0
+flask-wtf>=1.2
 msal>=1.28
 gunicorn>=21.2
 
