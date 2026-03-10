@@ -34,6 +34,16 @@ def _get_owner_id() -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Health Check (unauthenticated — used by App Service health probes)
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/healthz")
+def healthz():
+    """Lightweight liveness probe for Azure App Service health checks."""
+    return jsonify(status="healthy"), 200
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Landing
 # ──────────────────────────────────────────────────────────────────────
 
