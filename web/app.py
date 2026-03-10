@@ -7,11 +7,18 @@ import secrets
 from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, Response, g
+from flask import Flask, Response, g, session
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 csrf = CSRFProtect()
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["120 per minute"],
+    storage_uri="memory://",
+)
 
 
 def create_app() -> Flask:
@@ -74,6 +81,9 @@ def create_app() -> Flask:
     csrf.init_app(app)
     csrf.exempt(auth_bp)  # OAuth routes use their own state parameter
 
+    # ── Rate limiting ────────────────────────────────────────────────
+    limiter.init_app(app)
+
     # ── CSP nonce (generated per-request for inline scripts) ─────────
     @app.before_request
     def _generate_csp_nonce() -> None:
@@ -105,6 +115,10 @@ def create_app() -> Flask:
             "connect-src 'self'; "
             "frame-ancestors 'none'"
         )
+        # Prevent caching of authenticated / data-bearing responses
+        if "user" in session:
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
         return response
 
     return app

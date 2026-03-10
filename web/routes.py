@@ -16,6 +16,7 @@ from flask import (
     url_for,
 )
 
+from web.app import limiter
 from web.auth_web import login_required, get_access_token
 from web.tasks import fetch_subscriptions, get_task, start_scan, start_readiness_check, start_rbac_export
 
@@ -25,6 +26,11 @@ _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
+
+
+def _get_owner_id() -> str:
+    """Return the Entra OID of the currently signed-in user."""
+    return session.get("user", {}).get("oid", "")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -65,6 +71,7 @@ def dashboard():
 
 @main_bp.route("/scan", methods=["POST"])
 @login_required
+@limiter.limit("10 per minute")
 def scan():
     """Start a background subscription scan."""
     subscription_id = request.form.get("subscription_id", "").strip()
@@ -74,7 +81,7 @@ def scan():
         return jsonify({"error": "subscription_id must be a valid UUID"}), 400
 
     token = get_access_token()
-    task_id = start_scan(token, subscription_id)
+    task_id = start_scan(token, subscription_id, owner_id=_get_owner_id())
     session["last_scan_sub"] = subscription_id
     return redirect(url_for("main.scan_status", task_id=task_id))
 
@@ -83,7 +90,7 @@ def scan():
 @login_required
 def scan_status(task_id: str):
     """Show scan progress / results."""
-    task = get_task(task_id)
+    task = get_task(task_id, owner_id=_get_owner_id())
     if task is None:
         return render_template("error.html", message="Task not found."), 404
 
@@ -101,9 +108,10 @@ def scan_status(task_id: str):
 
 @main_bp.route("/api/task/<task_id>")
 @login_required
+@limiter.limit("60 per minute")
 def api_task_status(task_id: str):
     """Return task status as JSON (used by the JS polling loop)."""
-    task = get_task(task_id)
+    task = get_task(task_id, owner_id=_get_owner_id())
     if task is None:
         return jsonify({"error": "not found"}), 404
 
@@ -141,7 +149,7 @@ def api_task_status(task_id: str):
 @login_required
 def migration_plan(task_id: str):
     """Generate and return a migration plan JSON for a completed scan."""
-    task = get_task(task_id)
+    task = get_task(task_id, owner_id=_get_owner_id())
     if task is None or task.result is None:
         return render_template("error.html", message="No completed scan found."), 404
 
@@ -173,6 +181,7 @@ def migration_plan(task_id: str):
 
 @main_bp.route("/readiness", methods=["POST"])
 @login_required
+@limiter.limit("10 per minute")
 def readiness():
     """Start a background readiness check."""
     subscription_id = request.form.get("subscription_id", "").strip()
@@ -182,7 +191,7 @@ def readiness():
         return jsonify({"error": "subscription_id must be a valid UUID"}), 400
 
     token = get_access_token()
-    task_id = start_readiness_check(token, subscription_id)
+    task_id = start_readiness_check(token, subscription_id, owner_id=_get_owner_id())
     session["last_readiness_sub"] = subscription_id
     return redirect(url_for("main.readiness_status", task_id=task_id))
 
@@ -191,7 +200,7 @@ def readiness():
 @login_required
 def readiness_status(task_id: str):
     """Show readiness check progress / results."""
-    task = get_task(task_id)
+    task = get_task(task_id, owner_id=_get_owner_id())
     if task is None:
         return render_template("error.html", message="Task not found."), 404
 
@@ -211,7 +220,7 @@ def readiness_status(task_id: str):
 @login_required
 def checklist(task_id: str):
     """Show interactive migration checklist based on scan results."""
-    task = get_task(task_id)
+    task = get_task(task_id, owner_id=_get_owner_id())
     if task is None or task.result is None:
         return render_template("error.html", message="No completed scan found."), 404
 
@@ -229,6 +238,7 @@ def checklist(task_id: str):
 
 @main_bp.route("/export-rbac", methods=["POST"])
 @login_required
+@limiter.limit("10 per minute")
 def export_rbac_route():
     """Start a background RBAC export."""
     subscription_id = request.form.get("subscription_id", "").strip()
@@ -238,7 +248,7 @@ def export_rbac_route():
         return jsonify({"error": "subscription_id must be a valid UUID"}), 400
 
     token = get_access_token()
-    task_id = start_rbac_export(token, subscription_id)
+    task_id = start_rbac_export(token, subscription_id, owner_id=_get_owner_id())
     session["last_rbac_sub"] = subscription_id
     return redirect(url_for("main.rbac_export_status", task_id=task_id))
 
@@ -247,7 +257,7 @@ def export_rbac_route():
 @login_required
 def rbac_export_status(task_id: str):
     """Show RBAC export progress / results."""
-    task = get_task(task_id)
+    task = get_task(task_id, owner_id=_get_owner_id())
     if task is None:
         return render_template("error.html", message="Task not found."), 404
 
@@ -263,7 +273,7 @@ def rbac_export_status(task_id: str):
 @login_required
 def rbac_download(task_id: str):
     """Download the RBAC export JSON from a completed export task."""
-    task = get_task(task_id)
+    task = get_task(task_id, owner_id=_get_owner_id())
     if task is None or task.result is None:
         return jsonify({"error": "Export not found or not complete"}), 404
 
@@ -285,7 +295,7 @@ def rbac_download(task_id: str):
 @login_required
 def export_pdf(task_id: str):
     """Download a PDF migration report for a completed scan."""
-    task = get_task(task_id)
+    task = get_task(task_id, owner_id=_get_owner_id())
     if task is None or task.result is None:
         return render_template("error.html", message="No completed scan found."), 404
 
@@ -305,7 +315,7 @@ def export_pdf(task_id: str):
 @login_required
 def export_excel(task_id: str):
     """Download an Excel migration report for a completed scan."""
-    task = get_task(task_id)
+    task = get_task(task_id, owner_id=_get_owner_id())
     if task is None or task.result is None:
         return render_template("error.html", message="No completed scan found."), 404
 
