@@ -69,6 +69,13 @@ IMPACTED_RESOURCE_TYPES: list[str] = [
     "Microsoft.HybridCompute/machines",
     "Microsoft.HybridCompute/machines/extensions",
 
+    # ── Azure Arc Data Services ────────────────────────────────────
+    # Arc-enabled SQL Server relies on the Arc agent identity, extensions,
+    # and service principal — all tenant-bound.  Private endpoints may
+    # also reference the original tenant.
+    "Microsoft.AzureArcData/SqlServerInstances",
+    "Microsoft.AzureArcData/SqlServerInstances/Databases",
+
     # ── Azure Policy ───────────────────────────────────────────────
     # All policy objects (definitions, assignments, exemptions) are deleted.
     "Microsoft.Authorization/policyAssignments",
@@ -265,6 +272,20 @@ REQUIRED_ACTIONS: dict[str, dict[str, str]] = {
         "pre": "",
         "post": "Remove and reinstall Arc VM extensions after re-onboarding the agent to the target tenant.",
         "doc_url": "https://learn.microsoft.com/en-us/azure/azure-arc/servers/manage-vm-extensions",
+    },
+
+    # ── Azure Arc Data Services ────────────────────────────────────
+    "Microsoft.AzureArcData/SqlServerInstances": {
+        "timing": "both",
+        "pre": "Document the Arc agent service principal, extensions, and any private endpoint configurations.",
+        "post": "Disconnect and re-onboard the Arc agent to the target tenant. Reconfigure the SQL Server instance registration, managed identity, and any private endpoints.",
+        "doc_url": "https://learn.microsoft.com/en-us/sql/sql-server/azure-arc/overview",
+    },
+    "Microsoft.AzureArcData/SqlServerInstances/Databases": {
+        "timing": "post",
+        "pre": "",
+        "post": "After re-onboarding the parent Arc-enabled SQL Server instance, verify database inventory is rediscovered and monitoring resumes.",
+        "doc_url": "https://learn.microsoft.com/en-us/sql/sql-server/azure-arc/overview",
     },
 
     # ── Azure Policy ───────────────────────────────────────────────
