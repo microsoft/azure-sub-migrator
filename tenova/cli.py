@@ -427,6 +427,58 @@ def import_rbac_cmd(
             console.print(f"  • {err}")
 
 
+@cli.command("generate-runbook")
+@click.option("--subscription-id", "-s", required=True, help="Subscription ID.")
+@click.option("--target-tenant-id", "-t", default="<TARGET_TENANT_ID>", show_default=True, help="Target tenant ID.")
+@click.option(
+    "--output-dir", "-o",
+    type=click.Path(path_type=Path),
+    default="migration_output",
+    show_default=True,
+    help="Directory to save the runbook Markdown file.",
+)
+@click.pass_context
+def generate_runbook_cmd(ctx: click.Context, subscription_id: str, target_tenant_id: str, output_dir: Path) -> None:
+    """Scan a subscription and generate a step-by-step migration runbook.
+
+    The runbook is a Markdown file with pre-filled Azure CLI commands
+    organized into PRE-TRANSFER, TRANSFER, and POST-TRANSFER phases.
+    """
+    cfg: MigrationConfig = ctx.obj["config"]
+    cfg.subscription_id = subscription_id
+
+    try:
+        credential = get_credential(
+            method=cfg.auth_method,
+            tenant_id=cfg.source_tenant_id or None,
+            client_id=cfg.client_id or None,
+            client_secret=cfg.client_secret or None,
+        )
+    except Exception as exc:
+        console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
+        sys.exit(1)
+
+    from tenova.scanner import scan_subscription
+    from tenova.runbook import generate_runbook
+
+    console.print(f"[bold cyan]Scanning subscription {subscription_id}…[/]")
+    scan_result = scan_subscription(credential, subscription_id)
+
+    console.print("[bold cyan]Generating migration runbook…[/]")
+    markdown = generate_runbook(scan_result, subscription_id, target_tenant_id)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"runbook_{subscription_id[:8]}.md"
+    filepath = output_dir / filename
+    filepath.write_text(markdown, encoding="utf-8")
+
+    action_count = len(scan_result.get("requires_action", []))
+    safe_count = len(scan_result.get("transfer_safe", []))
+    console.print(f"[bold green]✔ Runbook saved to:[/] {filepath}")
+    console.print(f"  {safe_count} transfer-safe, {action_count} requires-action resources.")
+    console.print(f"  Open the Markdown file for step-by-step instructions with CLI commands.")
+
+
 @cli.command("readiness-check")
 @click.option("--subscription-id", "-s", required=True, help="Subscription ID to check.")
 @click.pass_context

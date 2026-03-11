@@ -298,8 +298,29 @@ def rbac_download(task_id: str):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Report Exports (PDF / Excel)
+# Report Exports (PDF / Excel / Runbook)
 # ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/export/runbook/<task_id>")
+@login_required
+def export_runbook(task_id: str):
+    """Download a Markdown migration runbook for a completed scan."""
+    task = get_task(task_id, owner_id=_get_owner_id())
+    if task is None or task.result is None:
+        return render_template("error.html", message="No completed scan found."), 404
+
+    from tenova.runbook import generate_runbook
+
+    subscription_id = session.get("last_scan_sub", "")
+    markdown = generate_runbook(
+        scan_result=task.result,
+        subscription_id=subscription_id,
+    )
+    response = make_response(markdown)
+    response.headers["Content-Type"] = "text/markdown; charset=utf-8"
+    response.headers["Content-Disposition"] = f"attachment; filename=migration_runbook_{task_id}.md"
+    return response
+
 
 @main_bp.route("/export/pdf/<task_id>")
 @login_required
