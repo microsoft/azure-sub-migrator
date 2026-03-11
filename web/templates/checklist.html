@@ -1,6 +1,65 @@
 {% extends "base.html" %}
 {% block title %}Migration Checklist – Tenova{% endblock %}
 
+{% block extra_head %}
+<style nonce="{{ csp_nonce }}">
+  .cmd-block {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    position: relative;
+    margin-top: 6px;
+    margin-bottom: 4px;
+    border: 1px solid #313244;
+  }
+  .cmd-block .cmd-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: #45475a;
+    color: #cdd6f4;
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.72rem;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+  .cmd-block .cmd-copy-btn:hover { opacity: 1; }
+  .cmd-block .cmd-copy-btn.copied {
+    background: #a6e3a1;
+    color: #1e1e2e;
+  }
+  .cmd-toggle {
+    font-size: 0.8rem;
+    cursor: pointer;
+    color: var(--bs-info);
+    border: none;
+    background: none;
+    padding: 0;
+    margin-top: 4px;
+  }
+  .cmd-toggle:hover {
+    text-decoration: underline;
+  }
+  .cmd-section {
+    margin-top: 6px;
+  }
+  .cmd-desc {
+    font-size: 0.78rem;
+    color: var(--bs-secondary);
+    margin-bottom: 2px;
+    font-weight: 500;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
@@ -36,27 +95,87 @@
     <span class="badge bg-danger float-end" id="pre-count-badge">0</span>
   </div>
   <div class="card-body p-0">
-    <!-- General pre-transfer items (always shown) -->
+    <!-- General pre-transfer items -->
     <ul class="list-group list-group-flush" id="pre-general-list">
       <li class="list-group-item d-flex align-items-start gap-3" data-item="rbac-export">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-        <div>
+        <div class="flex-grow-1">
           <strong>Export RBAC role assignments and custom roles</strong>
-          <div class="text-body-secondary small">All role assignments and custom roles are permanently deleted during transfer. Run <code>tenova export-rbac</code> or use the Export RBAC button on the dashboard.</div>
+          <div class="text-body-secondary small">All role assignments and custom roles are permanently deleted during transfer.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-rbac-export">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-rbac-export">
+            <div class="cmd-desc">Export all role assignments to JSON</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az role assignment list --subscription {{ subscription_id }} --all --output json > rbac_assignments.json</div>
+            <div class="cmd-desc mt-2">Export custom role definitions</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az role definition list --custom-role-only true --subscription {{ subscription_id }} --output json > custom_roles.json</div>
+            <div class="cmd-desc mt-2">Or use Tenova CLI</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>tenova export-rbac -s {{ subscription_id }}</div>
+          </div>
         </div>
       </li>
       <li class="list-group-item d-flex align-items-start gap-3" data-item="rbac-review">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-        <div>
+        <div class="flex-grow-1">
           <strong>Map source principals to target tenant principals</strong>
           <div class="text-body-secondary small">Create a principal mapping JSON file that maps old user/group/SP object IDs to their equivalents in the target tenant.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-rbac-review">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-rbac-review">
+            <div class="cmd-desc">List all unique principals in current assignments</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az role assignment list --subscription {{ subscription_id }} --all --query "[].principalId" -o tsv | sort -u</div>
+          </div>
         </div>
       </li>
       <li class="list-group-item d-flex align-items-start gap-3" data-item="backup-keyvault">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-        <div>
+        <div class="flex-grow-1">
           <strong>Back up Key Vault secrets, certificates, and keys</strong>
-          <div class="text-body-secondary small">Key Vault access policies are wiped during transfer. Export secrets and certificate references before proceeding.</div>
+          <div class="text-body-secondary small">Key Vault access policies are wiped during transfer. Export secrets and certificate references.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-kv-backup">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-kv-backup">
+            <div class="cmd-desc">List all Key Vaults in the subscription</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az keyvault list --subscription {{ subscription_id }} --query "[].name" -o tsv</div>
+            <div class="cmd-desc mt-2">For each vault, export access policies</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button># Replace &lt;VAULT_NAME&gt; with each vault name:
+az keyvault show --name "&lt;VAULT_NAME&gt;" --subscription {{ subscription_id }} \
+  --query "properties.accessPolicies" --output json > kv_policies.json</div>
+          </div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="export-locks">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div class="flex-grow-1">
+          <strong>Export and remove resource locks</strong>
+          <div class="text-body-secondary small">Resource locks can block post-transfer remediation. Export before transfer.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-locks">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-locks">
+            <div class="cmd-desc">Export all resource locks</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az lock list --subscription {{ subscription_id }} --output json > resource_locks.json</div>
+          </div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="export-policies">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div class="flex-grow-1">
+          <strong>Export Azure Policy assignments and custom definitions</strong>
+          <div class="text-body-secondary small">Policy assignments are permanently deleted during transfer.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-policies">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-policies">
+            <div class="cmd-desc">Export policy assignments</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az policy assignment list --subscription {{ subscription_id }} --output json > policy_assignments.json</div>
+            <div class="cmd-desc mt-2">Export custom policy definitions</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az policy definition list --subscription {{ subscription_id }} \
+  --query "[?policyType=='Custom']" --output json > custom_policies.json</div>
+          </div>
         </div>
       </li>
     </ul>
@@ -74,23 +193,38 @@
     <ul class="list-group list-group-flush">
       <li class="list-group-item d-flex align-items-start gap-3" data-item="verify-readiness">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-        <div>
+        <div class="flex-grow-1">
           <strong>Verify readiness check passes (no blockers)</strong>
-          <div class="text-body-secondary small">Run <code>tenova readiness-check</code> or use the Readiness Check on the dashboard. All blockers must be resolved.</div>
+          <div class="text-body-secondary small">All blockers must be resolved before transfer.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-readiness">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-readiness">
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>tenova readiness-check -s {{ subscription_id }}</div>
+          </div>
         </div>
       </li>
       <li class="list-group-item d-flex align-items-start gap-3" data-item="schedule-downtime">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
         <div>
           <strong>Schedule maintenance window and notify stakeholders</strong>
-          <div class="text-body-secondary small">Subscription transfer requires downtime. Ensure all teams are aware and a rollback plan is in place.</div>
+          <div class="text-body-secondary small">Subscription transfer requires downtime. Ensure all teams are aware.</div>
         </div>
       </li>
       <li class="list-group-item d-flex align-items-start gap-3" data-item="execute-transfer">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-        <div>
+        <div class="flex-grow-1">
           <strong>Transfer the subscription to the target tenant</strong>
-          <div class="text-body-secondary small">Use Azure Portal → Subscriptions → Change directory, or run <code>tenova transfer</code>.</div>
+          <div class="text-body-secondary small">Execute the directory change via Portal or CLI.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-transfer">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-transfer">
+            <div class="cmd-desc">Azure Portal (open in browser)</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>https://portal.azure.com/#@/resource/subscriptions/{{ subscription_id }}/changeDirectory</div>
+            <div class="cmd-desc mt-2">Tenova CLI</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>tenova transfer -s {{ subscription_id }} -t &lt;TARGET_TENANT_ID&gt;</div>
+          </div>
         </div>
       </li>
     </ul>
@@ -108,23 +242,88 @@
     <ul class="list-group list-group-flush" id="post-general-list">
       <li class="list-group-item d-flex align-items-start gap-3" data-item="import-rbac">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-        <div>
+        <div class="flex-grow-1">
           <strong>Import RBAC role assignments and custom roles</strong>
-          <div class="text-body-secondary small">Run <code>tenova import-rbac</code> with the exported file and principal mapping.</div>
+          <div class="text-body-secondary small">Recreate role assignments using the exported file and principal mapping.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-import-rbac">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-import-rbac">
+            <div class="cmd-desc">Using Tenova CLI (recommended)</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>tenova import-rbac -s {{ subscription_id }} -f rbac_assignments.json -m principal_mapping.json</div>
+            <div class="cmd-desc mt-2">Or manually, per assignment</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button># az role assignment create --assignee "&lt;NEW_PRINCIPAL_ID&gt;" \
+#   --role "&lt;ROLE_NAME_OR_ID&gt;" --scope "&lt;SCOPE&gt;"</div>
+          </div>
         </div>
       </li>
       <li class="list-group-item d-flex align-items-start gap-3" data-item="fix-sami">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-        <div>
+        <div class="flex-grow-1">
           <strong>Disable and re-enable system-assigned managed identities</strong>
-          <div class="text-body-secondary small">All system-assigned managed identities are broken after transfer. Disable and re-enable on each resource.</div>
+          <div class="text-body-secondary small">All system-assigned managed identities break after transfer. Toggle on each resource.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-sami">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-sami">
+            <div class="cmd-desc">Example: Reset identity on a VM</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button># Disable then re-enable:
+az vm identity remove --ids "&lt;VM_RESOURCE_ID&gt;" --identities [system]
+az vm identity assign --ids "&lt;VM_RESOURCE_ID&gt;"</div>
+            <div class="cmd-desc mt-2">Example: Reset identity on a Web App</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az webapp identity assign --name "&lt;APP_NAME&gt;" --resource-group "&lt;RG&gt;" \
+  --subscription {{ subscription_id }}</div>
+          </div>
         </div>
       </li>
       <li class="list-group-item d-flex align-items-start gap-3" data-item="rotate-keys">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-        <div>
+        <div class="flex-grow-1">
           <strong>Rotate storage account access keys and SAS tokens</strong>
-          <div class="text-body-secondary small">Source tenant users may still have access via access keys. Rotate all keys to revoke access.</div>
+          <div class="text-body-secondary small">Source tenant users may still have access via access keys. Rotate to revoke.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-rotate-keys">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-rotate-keys">
+            <div class="cmd-desc">List all storage accounts</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az storage account list --subscription {{ subscription_id }} --query "[].{name:name, rg:resourceGroup}" -o table</div>
+            <div class="cmd-desc mt-2">Rotate keys for each account</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button># Replace &lt;ACCOUNT&gt; and &lt;RG&gt;:
+az storage account keys renew --account-name "&lt;ACCOUNT&gt;" \
+  --resource-group "&lt;RG&gt;" --subscription {{ subscription_id }} --key key1</div>
+          </div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="restore-policies">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div class="flex-grow-1">
+          <strong>Reimport Azure Policy assignments</strong>
+          <div class="text-body-secondary small">Recreate policy assignments from the exported JSON.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-restore-policies">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-restore-policies">
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button># For each assignment in policy_assignments.json:
+# az policy assignment create --name "&lt;NAME&gt;" \
+#   --policy "&lt;POLICY_DEFINITION_ID&gt;" \
+#   --scope "/subscriptions/{{ subscription_id }}"</div>
+          </div>
+        </div>
+      </li>
+      <li class="list-group-item d-flex align-items-start gap-3" data-item="restore-locks">
+        <input type="checkbox" class="form-check-input mt-1 checklist-check" />
+        <div class="flex-grow-1">
+          <strong>Restore resource locks</strong>
+          <div class="text-body-secondary small">Recreate resource locks from the exported JSON.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-restore-locks">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-restore-locks">
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button># For each lock in resource_locks.json:
+# az lock create --name "&lt;LOCK_NAME&gt;" \
+#   --lock-type "&lt;CanNotDelete|ReadOnly&gt;" \
+#   --resource-group "&lt;RG&gt;" --subscription {{ subscription_id }}</div>
+          </div>
         </div>
       </li>
     </ul>
@@ -142,16 +341,31 @@
     <ul class="list-group list-group-flush">
       <li class="list-group-item d-flex align-items-start gap-3" data-item="validate-services">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-        <div>
+        <div class="flex-grow-1">
           <strong>Validate all services are working in the target tenant</strong>
-          <div class="text-body-secondary small">Test application endpoints, verify database connectivity, check Key Vault access, and validate managed identity operations.</div>
+          <div class="text-body-secondary small">Test endpoints, verify database connectivity, check Key Vault access.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-validate">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-validate">
+            <div class="cmd-desc">Verify subscription tenant has changed</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az account show --subscription {{ subscription_id }} --query tenantId -o tsv</div>
+            <div class="cmd-desc mt-2">List all resources to confirm access</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az resource list --subscription {{ subscription_id }} --query "length(@)" -o tsv</div>
+          </div>
         </div>
       </li>
       <li class="list-group-item d-flex align-items-start gap-3" data-item="rescan">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-        <div>
-          <strong>Run a follow-up scan in the target tenant</strong>
+        <div class="flex-grow-1">
+          <strong>Run a follow-up Tenova scan in the target tenant</strong>
           <div class="text-body-secondary small">Perform another scan to confirm all impacted resources have been remediated.</div>
+          <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-rescan">
+            <i class="bi bi-terminal me-1"></i>Show CLI commands
+          </button>
+          <div class="collapse cmd-section" id="cmd-rescan">
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>tenova scan -s {{ subscription_id }}</div>
+          </div>
         </div>
       </li>
       <li class="list-group-item d-flex align-items-start gap-3" data-item="close-window">
@@ -165,8 +379,11 @@
   </div>
 </div>
 
-<!-- Reset button -->
-<div class="text-end mb-4">
+<!-- Download / Reset -->
+<div class="d-flex justify-content-between mb-4">
+  <a href="{{ url_for('main.export_runbook', task_id=task_id) }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-download me-1"></i>Download Full Runbook (Markdown)
+  </a>
   <button id="reset-btn" class="btn btn-outline-danger btn-sm">
     <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Checklist
   </button>
@@ -179,51 +396,98 @@
   const STORAGE_KEY = 'migration_checklist_{{ task_id }}';
   const scanData = {{ scan_data | tojson }};
 
-  // ── Build resource-specific checklist items ──────────────────────
+  /* ── Copy-to-clipboard ────────────────────────────────────────── */
+  window.copyCmd = function(btn) {
+    const block = btn.parentElement;
+    const text = block.textContent.replace(btn.textContent, '').trim();
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = 'Copy';
+        btn.classList.remove('copied');
+      }, 1500);
+    });
+  };
+
+  /* ── Helpers ──────────────────────────────────────────────────── */
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+
+  function renderCmdBlock(id, cmds) {
+    if (!cmds || cmds.length === 0) return '';
+    let html = `<button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#${id}">`;
+    html += `<i class="bi bi-terminal me-1"></i>Show CLI commands</button>`;
+    html += `<div class="collapse cmd-section" id="${id}">`;
+    cmds.forEach((c, ci) => {
+      html += `<div class="cmd-desc${ci > 0 ? ' mt-2' : ''}">${esc(c.description)}</div>`;
+      html += `<div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>${esc(c.command)}</div>`;
+    });
+    html += '</div>';
+    return html;
+  }
+
+  /* ── Build resource-specific checklist items ──────────────────── */
   function buildResourceItems() {
     const preList = document.getElementById('pre-resource-list');
     const postList = document.getElementById('post-resource-list');
     let preCount = 0, postCount = 0;
 
-    (scanData.requires_action || []).forEach((r, idx) => {
+    function processResource(r, idx, prefix) {
       const timing = (r.timing || 'post').toLowerCase();
       const pre = r.pre_action || '';
       const post = r.post_action || '';
       const docUrl = r.doc_url || '';
       const docLink = docUrl
-        ? ` <a href="${esc(docUrl)}" target="_blank" class="text-info small">[Docs]</a>`
+        ? ` <a href="${esc(docUrl)}" target="_blank" rel="noopener" class="text-info small">[Docs]</a>`
         : '';
+
+      const cliCmds = r.cli_commands || { pre: [], post: [] };
 
       if ((timing === 'pre' || timing === 'both') && pre) {
         preCount++;
+        const cmdId = `cmd-pre-${prefix}-${idx}`;
         preList.insertAdjacentHTML('beforeend', `
-          <li class="list-group-item d-flex align-items-start gap-3" data-item="pre-resource-${idx}">
+          <li class="list-group-item d-flex align-items-start gap-3" data-item="pre-${prefix}-${idx}">
             <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-            <div>
+            <div class="flex-grow-1">
               <strong>${esc(r.name)}</strong> <code class="small">${esc(r.type)}</code>${docLink}
               <div class="text-body-secondary small">${esc(pre)}</div>
+              ${renderCmdBlock(cmdId, cliCmds.pre)}
             </div>
           </li>`);
       }
 
       if ((timing === 'post' || timing === 'both') && post) {
         postCount++;
+        const cmdId = `cmd-post-${prefix}-${idx}`;
         postList.insertAdjacentHTML('beforeend', `
-          <li class="list-group-item d-flex align-items-start gap-3" data-item="post-resource-${idx}">
+          <li class="list-group-item d-flex align-items-start gap-3" data-item="post-${prefix}-${idx}">
             <input type="checkbox" class="form-check-input mt-1 checklist-check" />
-            <div>
+            <div class="flex-grow-1">
               <strong>${esc(r.name)}</strong> <code class="small">${esc(r.type)}</code>${docLink}
               <div class="text-body-secondary small">${esc(post)}</div>
+              ${renderCmdBlock(cmdId, cliCmds.post)}
             </div>
           </li>`);
       }
+    }
+
+    (scanData.requires_action || []).forEach((r, idx) => {
+      processResource(r, idx, 'resource');
+      (r.children || []).forEach((child, cidx) => {
+        processResource(child, cidx, `child-${idx}`);
+      });
     });
 
-    document.getElementById('pre-count-badge').textContent = preCount + 3; // +3 for general items
-    document.getElementById('post-count-badge').textContent = postCount + 3;
+    document.getElementById('pre-count-badge').textContent = preCount + 5;
+    document.getElementById('post-count-badge').textContent = postCount + 5;
   }
 
-  // ── LocalStorage persistence ────────────────────────────────────
+  /* ── LocalStorage persistence ──────────────────────────────────── */
   function loadState() {
     try {
       return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
@@ -267,7 +531,7 @@
     }
   }
 
-  // ── Event listeners ─────────────────────────────────────────────
+  /* ── Event listeners ───────────────────────────────────────────── */
   document.addEventListener('change', e => {
     if (!e.target.classList.contains('checklist-check')) return;
     const item = e.target.closest('[data-item]');
@@ -295,13 +559,17 @@
     updateProgress();
   });
 
-  function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s || '';
-    return d.innerHTML;
-  }
+  /* ── Toggle button text ────────────────────────────────────────── */
+  document.addEventListener('shown.bs.collapse', e => {
+    const toggle = document.querySelector(`[data-bs-target="#${e.target.id}"]`);
+    if (toggle) toggle.innerHTML = '<i class="bi bi-terminal me-1"></i>Hide CLI commands';
+  });
+  document.addEventListener('hidden.bs.collapse', e => {
+    const toggle = document.querySelector(`[data-bs-target="#${e.target.id}"]`);
+    if (toggle) toggle.innerHTML = '<i class="bi bi-terminal me-1"></i>Show CLI commands';
+  });
 
-  // ── Init ────────────────────────────────────────────────────────
+  /* ── Init ──────────────────────────────────────────────────────── */
   buildResourceItems();
   applyState();
 })();

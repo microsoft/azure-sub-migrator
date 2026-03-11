@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tenova.runbook import generate_runbook
+from tenova.runbook import enrich_with_commands, generate_runbook
 
 
 # ── Shared fixtures ───────────────────────────────────────────────────
@@ -235,3 +235,97 @@ class TestManualSteps:
     def test_no_manual_section_when_all_templated(self):
         result = generate_runbook(_SAMPLE_SCAN, _SUB_ID, _TARGET_TENANT)
         assert "## Additional Manual Steps" not in result
+
+
+# ── enrich_with_commands tests ────────────────────────────────────────
+
+class TestEnrichWithCommands:
+    def test_returns_dict(self):
+        result = enrich_with_commands(_SAMPLE_SCAN, _SUB_ID)
+        assert isinstance(result, dict)
+
+    def test_preserves_transfer_safe(self):
+        result = enrich_with_commands(_SAMPLE_SCAN, _SUB_ID)
+        assert result["transfer_safe"] == _SAMPLE_SCAN["transfer_safe"]
+
+    def test_injects_cli_commands_key(self):
+        result = enrich_with_commands(_SAMPLE_SCAN, _SUB_ID)
+        for r in result["requires_action"]:
+            assert "cli_commands" in r
+            assert "pre" in r["cli_commands"]
+            assert "post" in r["cli_commands"]
+
+    def test_keyvault_has_pre_commands(self):
+        result = enrich_with_commands(_SAMPLE_SCAN, _SUB_ID)
+        kv = result["requires_action"][0]
+        assert kv["name"] == "kv-prod"
+        assert len(kv["cli_commands"]["pre"]) > 0
+        # Verify subscription ID is populated
+        assert _SUB_ID in kv["cli_commands"]["pre"][0]["command"]
+
+    def test_keyvault_has_post_commands(self):
+        result = enrich_with_commands(_SAMPLE_SCAN, _SUB_ID)
+        kv = result["requires_action"][0]
+        assert len(kv["cli_commands"]["post"]) > 0
+
+    def test_sql_has_pre_commands(self):
+        result = enrich_with_commands(_SAMPLE_SCAN, _SUB_ID)
+        sql = result["requires_action"][1]
+        assert sql["name"] == "sql-prod"
+        assert len(sql["cli_commands"]["pre"]) > 0
+        assert "sql-prod" in sql["cli_commands"]["pre"][0]["command"]
+
+    def test_command_has_description_and_command(self):
+        result = enrich_with_commands(_SAMPLE_SCAN, _SUB_ID)
+        kv = result["requires_action"][0]
+        cmd = kv["cli_commands"]["pre"][0]
+        assert "description" in cmd
+        assert "command" in cmd
+        assert isinstance(cmd["description"], str)
+        assert isinstance(cmd["command"], str)
+
+    def test_unknown_type_has_empty_commands(self):
+        scan = {
+            "transfer_safe": [],
+            "requires_action": [
+                {
+                    "name": "widget",
+                    "type": "Microsoft.CustomProviders/resourceProviders",
+                    "resource_group": "rg",
+                    "location": "eastus",
+                },
+            ],
+        }
+        result = enrich_with_commands(scan, _SUB_ID)
+        w = result["requires_action"][0]
+        assert w["cli_commands"]["pre"] == []
+        assert w["cli_commands"]["post"] == []
+
+    def test_children_are_enriched(self):
+        result = enrich_with_commands(_HIERARCHICAL_SCAN, _SUB_ID)
+        parent = result["requires_action"][0]
+        assert "cli_commands" in parent
+        child = parent["children"][0]
+        assert "cli_commands" in child
+        # Child type is HybridCompute/machines/extensions — has post commands
+        assert len(child["cli_commands"]["post"]) > 0
+
+    def test_does_not_mutate_original(self):
+        import copy
+        original = copy.deepcopy(_SAMPLE_SCAN)
+        enrich_with_commands(_SAMPLE_SCAN, _SUB_ID)
+        # Original should not have cli_commands injected
+        assert "cli_commands" not in _SAMPLE_SCAN["requires_action"][0]
+        assert _SAMPLE_SCAN == original
+
+    def test_empty_scan(self):
+        result = enrich_with_commands(_EMPTY_SCAN, _SUB_ID)
+        assert result["requires_action"] == []
+
+    def test_resource_name_in_commands(self):
+        result = enrich_with_commands(_SAMPLE_SCAN, _SUB_ID)
+        kv = result["requires_action"][0]
+        # Check that resource name appears in at least one command
+        all_cmds = kv["cli_commands"]["pre"] + kv["cli_commands"]["post"]
+        name_found = any("kv-prod" in c["command"] for c in all_cmds)
+        assert name_found

@@ -643,6 +643,67 @@ def _flatten_resources(
     return flat
 
 
+def enrich_with_commands(
+    scan_result: dict[str, Any],
+    subscription_id: str,
+) -> dict[str, Any]:
+    """Return a *copy* of ``scan_result`` with CLI commands injected.
+
+    Each item in ``requires_action`` (and its ``children``) receives a
+    ``cli_commands`` key — a dict with ``"pre"`` and ``"post"`` lists,
+    where each entry is ``{"description": str, "command": str}``.
+
+    This is designed for the interactive checklist UI so that operators
+    can see the exact CLI commands alongside each checkbox item.
+
+    Parameters
+    ----------
+    scan_result:
+        Output of ``scan_subscription()``.
+    subscription_id:
+        The subscription being migrated.
+
+    Returns
+    -------
+    dict
+        A shallow copy of *scan_result* with ``cli_commands`` injected.
+    """
+
+    def _inject(resource: dict[str, Any]) -> dict[str, Any]:
+        """Return a copy of *resource* with ``cli_commands`` added."""
+        enriched = dict(resource)
+        rtype = resource.get("type", "")
+        templates = _CLI_TEMPLATES.get(rtype)
+
+        pre_cmds: list[dict[str, str]] = []
+        post_cmds: list[dict[str, str]] = []
+
+        if templates:
+            for desc, cmd in templates.get("pre", []):
+                pre_cmds.append({
+                    "description": desc,
+                    "command": _format_command(cmd, subscription_id, resource),
+                })
+            for desc, cmd in templates.get("post", []):
+                post_cmds.append({
+                    "description": desc,
+                    "command": _format_command(cmd, subscription_id, resource),
+                })
+
+        enriched["cli_commands"] = {"pre": pre_cmds, "post": post_cmds}
+
+        # Recurse into children
+        if "children" in resource:
+            enriched["children"] = [_inject(c) for c in resource["children"]]
+
+        return enriched
+
+    return {
+        **scan_result,
+        "requires_action": [_inject(r) for r in scan_result.get("requires_action", [])],
+    }
+
+
 def generate_runbook(
     scan_result: dict[str, Any],
     subscription_id: str,

@@ -234,11 +234,16 @@ def checklist(task_id: str):
     if task is None or task.result is None:
         return render_template("error.html", message="No completed scan found."), 404
 
+    from tenova.runbook import enrich_with_commands
+
+    subscription_id = session.get("last_scan_sub", "")
+    enriched = enrich_with_commands(task.result, subscription_id)
+
     return render_template(
         "checklist.html",
         task_id=task_id,
-        subscription_id=session.get("last_scan_sub", ""),
-        scan_data=task.result,
+        subscription_id=subscription_id,
+        scan_data=enriched,
     )
 
 
