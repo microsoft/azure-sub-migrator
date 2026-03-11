@@ -79,6 +79,26 @@
 
 <!-- Tabs for transfer-safe / requires-action tables -->
 <div id="result-tables" style="display:none;">
+  <!-- Action buttons -->
+  <div class="text-end mb-3">
+    <a id="checklist-link" href="{{ url_for('main.checklist', task_id=task_id) }}" class="btn btn-outline-success me-2">
+      <i class="bi bi-list-check me-1"></i>Migration Checklist
+    </a>
+    <div class="btn-group me-2" role="group">
+      <a id="download-pdf" href="{{ url_for('main.export_pdf', task_id=task_id) }}" class="btn btn-outline-danger">
+        <i class="bi bi-file-earmark-pdf me-1"></i>PDF Report
+      </a>
+      <a id="download-excel" href="{{ url_for('main.export_excel', task_id=task_id) }}" class="btn btn-outline-success">
+        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Excel Report
+      </a>
+      <a id="download-runbook" href="{{ url_for('main.export_runbook', task_id=task_id) }}" class="btn btn-outline-info">
+        <i class="bi bi-journal-code me-1"></i>Runbook
+      </a>
+    </div>
+    <a id="download-plan" href="#" class="btn btn-outline-primary">
+      <i class="bi bi-download me-1"></i>JSON
+    </a>
+  </div>
   <ul class="nav nav-tabs" role="tablist">
     <li class="nav-item">
       <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#transferSafeTab">
@@ -131,26 +151,6 @@
     </div>
   </div>
 
-  <!-- Action buttons -->
-  <div class="text-end mt-3">
-    <a id="checklist-link" href="{{ url_for('main.checklist', task_id=task_id) }}" class="btn btn-outline-success me-2">
-      <i class="bi bi-list-check me-1"></i>Migration Checklist
-    </a>
-    <div class="btn-group me-2" role="group">
-      <a id="download-pdf" href="{{ url_for('main.export_pdf', task_id=task_id) }}" class="btn btn-outline-danger">
-        <i class="bi bi-file-earmark-pdf me-1"></i>PDF Report
-      </a>
-      <a id="download-excel" href="{{ url_for('main.export_excel', task_id=task_id) }}" class="btn btn-outline-success">
-        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Excel Report
-      </a>
-      <a id="download-runbook" href="{{ url_for('main.export_runbook', task_id=task_id) }}" class="btn btn-outline-info">
-        <i class="bi bi-journal-code me-1"></i>Runbook
-      </a>
-    </div>
-    <a id="download-plan" href="#" class="btn btn-outline-primary">
-      <i class="bi bi-download me-1"></i>JSON
-    </a>
-  </div>
 </div>
 {% endblock %}
 
