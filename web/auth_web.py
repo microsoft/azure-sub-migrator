@@ -35,7 +35,7 @@ def _build_msal_app() -> msal.ConfidentialClientApplication:
     """Build a ConfidentialClientApplication from Flask config."""
     return msal.ConfidentialClientApplication(
         client_id=current_app.config["ENTRA_CLIENT_ID"],
-        client_credential=current_app.config["ENTRA_CLIENT_SECRET"],
+        client_credential=current_app.config["ENTRA_CLIENT_CREDENTIAL"],
         authority=current_app.config["ENTRA_AUTHORITY"],
     )
 

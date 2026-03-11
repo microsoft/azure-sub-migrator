@@ -59,13 +59,46 @@ def create_app() -> Flask:
 
     # Entra ID / MSAL settings
     app.config["ENTRA_CLIENT_ID"] = os.environ.get("ENTRA_CLIENT_ID", "")
-    app.config["ENTRA_CLIENT_SECRET"] = os.environ.get("ENTRA_CLIENT_SECRET", "")
     app.config["ENTRA_REDIRECT_PATH"] = os.environ.get("ENTRA_REDIRECT_PATH", "/auth/callback")
     # Use 'organizations' so users from ANY Entra ID tenant can sign in
     app.config["ENTRA_AUTHORITY"] = "https://login.microsoftonline.com/organizations"
     app.config["ENTRA_SCOPES"] = [
         "https://management.azure.com/user_impersonation",
     ]
+
+    # Certificate-based credential for MSAL (preferred over client secret).
+    # On Azure App Service (Linux), WEBSITE_LOAD_CERTIFICATES causes the PFX
+    # to be available at /var/ssl/private/<thumbprint>.p12.
+    cert_thumbprint = os.environ.get(
+        "ENTRA_CERT_THUMBPRINT", "ED41DF079D28200E27940D07BEAC2BEAC7F83194"
+    )
+    app.config["ENTRA_CERT_THUMBPRINT"] = cert_thumbprint
+
+    pfx_path = f"/var/ssl/private/{cert_thumbprint}.p12"
+    if os.path.exists(pfx_path):
+        # Running on Azure — load private key from the uploaded PFX
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            pkcs12,
+            PrivateFormat,
+        )
+
+        pfx_data = Path(pfx_path).read_bytes()
+        private_key, _cert, _chain = pkcs12.load_key_and_certificates(
+            pfx_data, None  # Azure strips the password when loading
+        )
+        pem_key = private_key.private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        )
+        app.config["ENTRA_CLIENT_CREDENTIAL"] = {
+            "thumbprint": cert_thumbprint,
+            "private_key": pem_key.decode("ascii"),
+        }
+    else:
+        # Local dev fallback — use client secret if certificate not available
+        client_secret = os.environ.get("ENTRA_CLIENT_SECRET", "")
+        app.config["ENTRA_CLIENT_CREDENTIAL"] = client_secret
 
     # Migration output
     app.config["OUTPUT_DIR"] = os.environ.get("MIGRATION_OUTPUT_DIR", "migration_output")

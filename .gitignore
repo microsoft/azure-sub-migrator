@@ -34,8 +34,14 @@ htmlcov/
 # Secrets
 .env
 *.pem
+*.pfx
+*.cer
 *.key
+entra-cert-body.json
 docs/
 .azure/
 appservice-logs/
 appservice-logs.zip
+applogs/
+applogs.zip
+docker_latest.log
