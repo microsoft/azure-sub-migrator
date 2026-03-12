@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/post-transfer]
   pull_request:
     branches: [main]
 
