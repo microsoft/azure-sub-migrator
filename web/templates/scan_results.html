@@ -98,7 +98,8 @@
     <a id="download-plan" href="#" class="btn btn-outline-primary me-2">
       <i class="bi bi-download me-1"></i>JSON
     </a>
-    <a href="{{ url_for('main.connect_target', task_id=task_id) }}" class="btn btn-warning">
+    <a href="{{ url_for('main.connect_target', task_id=task_id) }}" class="btn btn-warning"
+       title="Use after transferring the subscription to the target tenant in the Azure portal. Your scan data is the 'before' snapshot that Tenova uses to reconfigure resources.">
       <i class="bi bi-lightning-charge me-1"></i>Post-Transfer Setup
     </a>
   </div>

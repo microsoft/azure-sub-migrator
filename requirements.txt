@@ -20,6 +20,7 @@ openpyxl>=3.1
 flask>=3.0
 flask-wtf>=1.2
 flask-limiter>=3.5
+flask-session>=0.6
 msal>=1.28
 cryptography>=42.0
 gunicorn>=21.2

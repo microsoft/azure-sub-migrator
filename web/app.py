@@ -10,6 +10,7 @@ from pathlib import Path
 from flask import Flask, Response, g, session
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_session import Session
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -50,6 +51,22 @@ def create_app() -> Flask:
     app.config["SESSION_COOKIE_SECURE"] = is_azure    # Secure only on HTTPS (Azure)
     app.config["SESSION_COOKIE_HTTPONLY"] = True       # no JS access
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"     # CSRF protection
+
+    # ── Server-side sessions ─────────────────────────────────────────
+    # Flask's default cookie-based sessions have a 4KB limit.
+    # Azure AD access tokens (~1.5-2KB each) overflow this when we
+    # store both source and target tenant tokens.  Flask-Session
+    # keeps session data on the server; only a tiny session ID cookie
+    # is sent to the browser.
+    app.config["SESSION_TYPE"] = "filesystem"
+    app.config["SESSION_FILE_DIR"] = os.path.join(
+        "/tmp" if is_azure else os.path.join(os.getcwd(), ".flask_sessions"),
+        "flask_sessions",
+    )
+    app.config["SESSION_PERMANENT"] = True
+    app.config["SESSION_USE_SIGNER"] = True           # sign the session ID cookie
+    app.config["SESSION_FILE_THRESHOLD"] = 200        # max files before cleanup
+    Session(app)
 
     # Session idle timeout (default 30 minutes)
     app.config["SESSION_IDLE_MINUTES"] = int(os.environ.get("SESSION_IDLE_MINUTES", "30"))
