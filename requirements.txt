@@ -15,6 +15,7 @@ pyyaml>=6.0
 # Reports
 fpdf2>=2.7
 openpyxl>=3.1
+pillow>=12.1.1
 
 # Web UI
 flask>=3.0
