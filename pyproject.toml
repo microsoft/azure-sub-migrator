@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Tenova – Azure Tenant-to-Tenant Migration Tool"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     { name = "LearnAzureWithMo", email = "noreply@example.com" },
 ]
@@ -18,7 +18,6 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -71,7 +70,7 @@ where = ["."]
 
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP"]
@@ -85,6 +84,6 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true

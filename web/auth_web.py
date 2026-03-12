@@ -8,9 +8,10 @@ Azure Resource Manager.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from functools import wraps
-from typing import Any, Callable
+from typing import Any
 
 import msal
 from flask import (
