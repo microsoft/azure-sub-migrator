@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch, call
 
 import pytest
@@ -120,10 +121,10 @@ class TestUpdateKeyvault:
 # ──────────────────────────────────────────────────────────────────────
 
 class TestUpdateSqlAdmin:
-    @patch("azure.mgmt.sql.SqlManagementClient")
-    def test_updates_admin(self, mock_client_cls, mock_credential):
+    def test_updates_admin(self, mock_credential):
+        mock_sql_module = MagicMock()
         mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
+        mock_sql_module.SqlManagementClient.return_value = mock_client
 
         sql_resource = {
             "name": "myserver",
@@ -132,7 +133,8 @@ class TestUpdateSqlAdmin:
         }
         mapping = {"old-admin": "new-admin"}
 
-        result = _update_sql_admin(mock_credential, "sub-1", sql_resource, mapping)
+        with patch.dict(sys.modules, {"azure.mgmt.sql": mock_sql_module}):
+            result = _update_sql_admin(mock_credential, "sub-1", sql_resource, mapping)
         assert result["operation"] == "SQL Server AD Admin: myserver"
 
 
@@ -141,10 +143,10 @@ class TestUpdateSqlAdmin:
 # ──────────────────────────────────────────────────────────────────────
 
 class TestUpdateAppServiceAuth:
-    @patch("azure.mgmt.web.WebSiteManagementClient")
-    def test_documents_auth(self, mock_client_cls, mock_credential):
+    def test_documents_auth(self, mock_credential):
+        mock_web_module = MagicMock()
         mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
+        mock_web_module.WebSiteManagementClient.return_value = mock_client
 
         app_resource = {
             "name": "mywebapp",
@@ -152,7 +154,8 @@ class TestUpdateAppServiceAuth:
             "type": "Microsoft.Web/sites",
         }
 
-        result = _update_app_service_auth(mock_credential, "sub-1", app_resource)
+        with patch.dict(sys.modules, {"azure.mgmt.web": mock_web_module}):
+            result = _update_app_service_auth(mock_credential, "sub-1", app_resource)
         assert result["operation"] == "App Service Auth: mywebapp"
 
 
@@ -161,10 +164,10 @@ class TestUpdateAppServiceAuth:
 # ──────────────────────────────────────────────────────────────────────
 
 class TestDocumentManagedIdentity:
-    @patch("azure.mgmt.msi.ManagedServiceIdentityClient")
-    def test_documents_identity(self, mock_client_cls, mock_credential):
+    def test_documents_identity(self, mock_credential):
+        mock_msi_module = MagicMock()
         mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
+        mock_msi_module.ManagedServiceIdentityClient.return_value = mock_client
 
         mi_resource = {
             "name": "my-mi",
@@ -172,7 +175,8 @@ class TestDocumentManagedIdentity:
             "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
         }
 
-        result = _document_managed_identity(mock_credential, "sub-1", mi_resource)
+        with patch.dict(sys.modules, {"azure.mgmt.msi": mock_msi_module}):
+            result = _document_managed_identity(mock_credential, "sub-1", mi_resource)
         assert result["operation"] == "Managed Identity: my-mi"
 
 
