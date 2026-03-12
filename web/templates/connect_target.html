@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Connect Target Tenant – Tenova{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.scan_status', task_id=task_id) }}">Scan Results</a></li>
+    <li class="breadcrumb-item active">Connect Target Tenant</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3><i class="bi bi-building-add me-2"></i>Post-Transfer Setup</h3>
+  <span class="text-body-secondary">Subscription: <code>{{ subscription_id }}</code></span>
+</div>
+
+<!-- Step indicator -->
+<div class="d-flex align-items-center mb-4">
+  <span class="badge bg-primary rounded-pill me-2 px-3 py-2">1</span>
+  <strong class="me-3">Connect Target Tenant</strong>
+  <i class="bi bi-chevron-right text-secondary me-3"></i>
+  <span class="badge bg-secondary rounded-pill me-2 px-3 py-2">2</span>
+  <span class="text-secondary me-3">Map Principals</span>
+  <i class="bi bi-chevron-right text-secondary me-3"></i>
+  <span class="badge bg-secondary rounded-pill me-2 px-3 py-2">3</span>
+  <span class="text-secondary">Execute</span>
+</div>
+
+{% if target_connected %}
+<!-- Already connected -->
+<div class="card border-success mb-4">
+  <div class="card-body">
+    <h5 class="card-title text-success">
+      <i class="bi bi-check-circle-fill me-2"></i>Target Tenant Connected
+    </h5>
+    <div class="row mt-3">
+      <div class="col-md-6">
+        <table class="table table-sm">
+          <tr>
+            <th class="text-body-secondary">Source Tenant</th>
+            <td><code>{{ source_tenant_id }}</code></td>
+          </tr>
+          <tr>
+            <th class="text-body-secondary">Source User</th>
+            <td>{{ session.get('user', {}).get('preferred_username', '—') }}</td>
+          </tr>
+        </table>
+      </div>
+      <div class="col-md-6">
+        <table class="table table-sm">
+          <tr>
+            <th class="text-body-secondary">Target Tenant</th>
+            <td><code>{{ target_user.get('tid', '—') }}</code></td>
+          </tr>
+          <tr>
+            <th class="text-body-secondary">Target User</th>
+            <td>{{ target_user.get('preferred_username', '—') }}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="mt-3">
+      <a href="{{ url_for('main.principal_mapping', task_id=task_id) }}" class="btn btn-primary">
+        <i class="bi bi-arrow-right me-1"></i>Continue to Principal Mapping
+      </a>
+    </div>
+  </div>
+</div>
+
+{% else %}
+<!-- Not yet connected -->
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card mb-4">
+      <div class="card-header">
+        <i class="bi bi-shield-lock me-2"></i>Authenticate in Target Tenant
+      </div>
+      <div class="card-body">
+        <p class="text-body-secondary mb-3">
+          After transferring the subscription, you need to sign in with an account in the
+          <strong>target (destination) tenant</strong> so Tenova can reconfigure resources there.
+        </p>
+        <p class="text-body-secondary mb-3">
+          This is a separate sign-in — you <strong>won't be signed out</strong> of your current session.
+          The target account can be a completely different identity.
+        </p>
+
+        <form action="{{ url_for('auth.target_tenant_login') }}" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <input type="hidden" name="task_id" value="{{ task_id }}" />
+
+          <div class="mb-3">
+            <label for="targetTenantId" class="form-label">Target Tenant ID</label>
+            <input type="text" class="form-control font-monospace" id="targetTenantId"
+                   name="target_tenant_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                   pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+                   required />
+            <div class="form-text">
+              The Entra ID (Azure AD) tenant ID of the destination tenant. You can find this in
+              the Azure portal under <em>Entra ID → Overview → Tenant ID</em>.
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-box-arrow-in-right me-1"></i>Connect to Target Tenant
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card border-info mb-4">
+      <div class="card-header bg-info text-dark">
+        <i class="bi bi-info-circle me-1"></i>Requirements
+      </div>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li class="mb-2">
+            The subscription must already be <strong>transferred</strong> to the target tenant
+            via the Azure portal.
+          </li>
+          <li class="mb-2">
+            Your target-tenant account needs <strong>Contributor</strong> +
+            <strong>User Access Administrator</strong> roles on the subscription.
+          </li>
+          <li class="mb-2">
+            The target tenant admin must have <strong>consented</strong> to the Tenova app.
+            <a href="{{ url_for('auth.admin_consent') }}" target="_blank">
+              Admin consent link <i class="bi bi-box-arrow-up-right"></i>
+            </a>
+          </li>
+          <li>
+            RBAC export should be done <strong>before</strong> the transfer so Tenova
+            can recreate the role assignments.
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <i class="bi bi-diagram-3 me-1"></i>Current Session
+      </div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tr>
+            <th class="text-body-secondary">Source Tenant</th>
+            <td><code>{{ source_tenant_id }}</code></td>
+          </tr>
+          <tr>
+            <th class="text-body-secondary">Signed in as</th>
+            <td>{{ session.get('user', {}).get('preferred_username', '—') }}</td>
+          </tr>
+          <tr>
+            <th class="text-body-secondary">Subscription</th>
+            <td><code>{{ subscription_id }}</code></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

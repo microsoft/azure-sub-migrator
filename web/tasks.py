@@ -29,6 +29,7 @@ from azure.core.credentials import AccessToken, TokenCredential
 from tenova.scanner import scan_subscription, list_subscriptions
 from tenova.readiness import check_readiness
 from tenova.rbac import export_rbac
+from tenova.post_transfer import run_post_transfer
 from tenova.logger import get_logger
 
 logger = get_logger("tasks")
@@ -130,6 +131,30 @@ def start_rbac_export(access_token: str, subscription_id: str, *, owner_id: str 
     )
     thread.start()
     logger.info("RBAC export task %s started for subscription %s", task_id, subscription_id)
+    return task_id
+
+
+def start_post_transfer(
+    access_token: str,
+    subscription_id: str,
+    scan_data: dict[str, Any],
+    rbac_export: dict[str, Any] | None,
+    principal_mapping: dict[str, str],
+    *,
+    owner_id: str = "",
+) -> str:
+    """Launch post-transfer reconfiguration in the background."""
+    task_id = str(uuid.uuid4())
+    task = TaskResult(task_id=task_id, task_type="post_transfer", owner_id=owner_id)
+    _store_task(task)
+
+    thread = threading.Thread(
+        target=_run_post_transfer,
+        args=(task, access_token, subscription_id, scan_data, rbac_export, principal_mapping),
+        daemon=True,
+    )
+    thread.start()
+    logger.info("Post-transfer task %s started for subscription %s", task_id, subscription_id)
     return task_id
 
 
@@ -263,6 +288,37 @@ def _run_rbac_export(task: TaskResult, access_token: str, subscription_id: str) 
         task.error = _sanitise_error(exc)
         task.status = TaskStatus.FAILED
         logger.exception("RBAC export task %s failed", task.task_id)
+    finally:
+        task.completed_at = datetime.now(timezone.utc)
+
+
+def _run_post_transfer(
+    task: TaskResult,
+    access_token: str,
+    subscription_id: str,
+    scan_data: dict[str, Any],
+    rbac_export: dict[str, Any] | None,
+    principal_mapping: dict[str, str],
+) -> None:
+    """Execute post-transfer reconfiguration in a background thread."""
+    task.status = TaskStatus.RUNNING
+    task.started_at = datetime.now(timezone.utc)
+    try:
+        cred = _credential_from_token(access_token)
+        result = run_post_transfer(
+            credential=cred,
+            subscription_id=subscription_id,
+            scan_data=scan_data,
+            rbac_export=rbac_export,
+            principal_mapping=principal_mapping,
+        )
+        task.result = result
+        task.status = TaskStatus.COMPLETED
+        logger.info("Post-transfer task %s completed", task.task_id)
+    except Exception as exc:
+        task.error = _sanitise_error(exc)
+        task.status = TaskStatus.FAILED
+        logger.exception("Post-transfer task %s failed", task.task_id)
     finally:
         task.completed_at = datetime.now(timezone.utc)
 

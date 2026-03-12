@@ -164,6 +164,105 @@ def logout():
     )
 
 
+@auth_bp.route("/target-tenant", methods=["POST"])
+@login_required
+def target_tenant_login():
+    """Start a second OAuth flow targeting the destination tenant."""
+    from tenova.target_tenant import build_target_auth_url
+
+    target_tenant_id = request.form.get("target_tenant_id", "").strip()
+    task_id = request.form.get("task_id", "").strip()
+
+    if not target_tenant_id:
+        flash("Target tenant ID is required.", "danger")
+        return redirect(request.referrer or url_for("main.dashboard"))
+
+    # Validate UUID format
+    import re
+    if not re.match(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        target_tenant_id,
+        re.IGNORECASE,
+    ):
+        flash("Target tenant ID must be a valid UUID.", "danger")
+        return redirect(request.referrer or url_for("main.dashboard"))
+
+    session["target_tenant_state"] = str(uuid.uuid4())
+    session["target_tenant_id"] = target_tenant_id
+    session["target_tenant_task_id"] = task_id
+
+    redirect_uri = (
+        request.url_root.rstrip("/")
+        + url_for("auth.target_tenant_callback")
+    )
+
+    auth_url = build_target_auth_url(
+        client_id=current_app.config["ENTRA_CLIENT_ID"],
+        target_tenant_id=target_tenant_id,
+        redirect_uri=redirect_uri,
+        state=session["target_tenant_state"],
+    )
+    return redirect(auth_url)
+
+
+@auth_bp.route("/target-tenant/callback")
+def target_tenant_callback():
+    """Handle the redirect after user authenticates in the target tenant."""
+    if request.args.get("state") != session.get("target_tenant_state"):
+        flash("Session state mismatch. Please try again.", "warning")
+        return redirect(url_for("main.dashboard"))
+
+    if "error" in request.args:
+        flash(
+            f"Target tenant auth failed: {request.args.get('error_description', '')}",
+            "danger",
+        )
+        return redirect(url_for("main.dashboard"))
+
+    from tenova.target_tenant import redeem_target_auth_code
+
+    target_tenant_id = session.get("target_tenant_id", "")
+    redirect_uri = (
+        request.url_root.rstrip("/")
+        + url_for("auth.target_tenant_callback")
+    )
+
+    result = redeem_target_auth_code(
+        client_id=current_app.config["ENTRA_CLIENT_ID"],
+        client_credential=current_app.config["ENTRA_CLIENT_CREDENTIAL"],
+        target_tenant_id=target_tenant_id,
+        code=request.args["code"],
+        redirect_uri=redirect_uri,
+    )
+
+    if "error" in result:
+        flash(
+            f"Token error: {result.get('error_description', '')}",
+            "danger",
+        )
+        return redirect(url_for("main.dashboard"))
+
+    # Store the target tenant token and identity separately
+    claims = result.get("id_token_claims", {})
+    session["target_access_token"] = result.get("access_token")
+    session["target_tenant_user"] = {
+        "name": claims.get("name", ""),
+        "preferred_username": claims.get("preferred_username", ""),
+        "oid": claims.get("oid", ""),
+        "tid": claims.get("tid", target_tenant_id),
+    }
+    session["target_tenant_connected"] = True
+
+    task_id = session.get("target_tenant_task_id", "")
+    flash(
+        f"Connected to target tenant as {claims.get('preferred_username', 'user')}",
+        "success",
+    )
+    if task_id:
+        return redirect(url_for("main.principal_mapping", task_id=task_id))
+    return redirect(url_for("main.dashboard"))
+
+
 @auth_bp.route("/admin-consent")
 def admin_consent():
     """Redirect an external-tenant admin to the Entra admin-consent endpoint.

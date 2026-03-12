@@ -95,8 +95,11 @@
         <i class="bi bi-journal-code me-1"></i>Runbook
       </a>
     </div>
-    <a id="download-plan" href="#" class="btn btn-outline-primary">
+    <a id="download-plan" href="#" class="btn btn-outline-primary me-2">
       <i class="bi bi-download me-1"></i>JSON
+    </a>
+    <a href="{{ url_for('main.connect_target', task_id=task_id) }}" class="btn btn-warning">
+      <i class="bi bi-lightning-charge me-1"></i>Post-Transfer Setup
     </a>
   </div>
   <ul class="nav nav-tabs" role="tablist">

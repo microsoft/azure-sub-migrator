@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Post-Transfer Execution – Tenova{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.scan_status', task_id=task_id) }}">Scan Results</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.connect_target', task_id=task_id) }}">Connect Target</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.principal_mapping', task_id=task_id) }}">Principal Mapping</a></li>
+    <li class="breadcrumb-item active">Execute</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3><i class="bi bi-lightning-charge me-2"></i>Post-Transfer Execution</h3>
+  <span class="text-body-secondary">Target: <code>{{ target_user }}</code></span>
+</div>
+
+<!-- Step indicator -->
+<div class="d-flex align-items-center mb-4">
+  <span class="badge bg-success rounded-pill me-2 px-3 py-2"><i class="bi bi-check"></i></span>
+  <span class="text-success me-3">Connect</span>
+  <i class="bi bi-chevron-right text-secondary me-3"></i>
+  <span class="badge bg-success rounded-pill me-2 px-3 py-2"><i class="bi bi-check"></i></span>
+  <span class="text-success me-3">Map</span>
+  <i class="bi bi-chevron-right text-secondary me-3"></i>
+  <span class="badge bg-primary rounded-pill me-2 px-3 py-2">3</span>
+  <strong>Execute</strong>
+</div>
+
+<!-- Progress Card -->
+<div id="progress-card" class="card mb-4">
+  <div class="card-body text-center py-5">
+    <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+      <span class="visually-hidden">Running…</span>
+    </div>
+    <h5 class="mb-2">Running post-transfer operations…</h5>
+    <p class="text-body-secondary mb-0">This may take a few minutes. Do not close this page.</p>
+    <div class="progress mt-3" style="max-width: 400px; margin: 0 auto;">
+      <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+           role="progressbar" style="width: 10%"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Results (hidden until done) -->
+<div id="results-section" class="d-none">
+  <!-- Summary Card -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card text-center border-primary">
+        <div class="card-body">
+          <h2 id="total-count" class="text-primary mb-0">—</h2>
+          <small class="text-body-secondary">Total Operations</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center border-success">
+        <div class="card-body">
+          <h2 id="succeeded-count" class="text-success mb-0">—</h2>
+          <small class="text-body-secondary">Succeeded</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center border-danger">
+        <div class="card-body">
+          <h2 id="failed-count" class="text-danger mb-0">—</h2>
+          <small class="text-body-secondary">Failed</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center border-warning">
+        <div class="card-body">
+          <h2 id="manual-count" class="text-warning mb-0">—</h2>
+          <small class="text-body-secondary">Manual Action</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Operations Table -->
+  <div class="card mb-4">
+    <div class="card-header">
+      <i class="bi bi-list-check me-2"></i>Operation Results
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr>
+              <th style="width:5%">#</th>
+              <th style="width:20%">Operation</th>
+              <th style="width:30%">Resource</th>
+              <th style="width:12%">Status</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="results-body">
+            <!-- filled by JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Done Actions -->
+  <div class="d-flex justify-content-between">
+    <a href="{{ url_for('main.scan_status', task_id=task_id) }}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back to Scan Results
+    </a>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary">
+      <i class="bi bi-house me-1"></i>Dashboard
+    </a>
+  </div>
+</div>
+
+<!-- Error card (hidden until error) -->
+<div id="error-card" class="alert alert-danger d-none">
+  <i class="bi bi-exclamation-octagon me-2"></i>
+  <strong>Error:</strong> <span id="error-msg"></span>
+  <br />
+  <a href="{{ url_for('main.connect_target', task_id=task_id) }}" class="btn btn-sm btn-outline-danger mt-2">
+    <i class="bi bi-arrow-counterclockwise me-1"></i>Retry
+  </a>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const POLL_URL = {{ url_for('main.api_post_transfer_status', task_id=task_id) | tojson }};
+  const POLL_INTERVAL = 3000;
+  let ticks = 0;
+
+  function statusBadge(status) {
+    const map = {
+      succeeded: '<span class="badge bg-success">Succeeded</span>',
+      failed:    '<span class="badge bg-danger">Failed</span>',
+      manual:    '<span class="badge bg-warning text-dark">Manual</span>',
+      skipped:   '<span class="badge bg-secondary">Skipped</span>',
+    };
+    return map[status] || '<span class="badge bg-info">' + status + '</span>';
+  }
+
+  function renderResults(data) {
+    document.getElementById('progress-card').classList.add('d-none');
+    document.getElementById('results-section').classList.remove('d-none');
+
+    const summary = data.summary || {};
+    document.getElementById('total-count').textContent    = summary.total ?? '—';
+    document.getElementById('succeeded-count').textContent = summary.succeeded ?? '—';
+    document.getElementById('failed-count').textContent    = summary.failed ?? '—';
+    document.getElementById('manual-count').textContent    = summary.manual ?? '—';
+
+    const operations = data.operations || [];
+    const tbody = document.getElementById('results-body');
+    tbody.innerHTML = '';
+    operations.forEach(function (op, i) {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="text-body-secondary">' + (i + 1) + '</td>' +
+        '<td><strong>' + (op.operation || '') + '</strong></td>' +
+        '<td><code class="small">' + (op.resource || '') + '</code></td>' +
+        '<td>' + statusBadge(op.status || 'unknown') + '</td>' +
+        '<td class="small">' + (op.details || '') + '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderError(msg) {
+    document.getElementById('progress-card').classList.add('d-none');
+    document.getElementById('error-card').classList.remove('d-none');
+    document.getElementById('error-msg').textContent = msg;
+  }
+
+  function poll() {
+    ticks++;
+    const pct = Math.min(10 + ticks * 5, 90);
+    document.getElementById('progress-bar').style.width = pct + '%';
+
+    fetch(POLL_URL)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.status === 'completed') {
+          document.getElementById('progress-bar').style.width = '100%';
+          renderResults(data.result || {});
+        } else if (data.status === 'failed') {
+          renderError(data.error || 'Unknown error');
+        } else {
+          setTimeout(poll, POLL_INTERVAL);
+        }
+      })
+      .catch(function () {
+        setTimeout(poll, POLL_INTERVAL);
+      });
+  }
+
+  setTimeout(poll, POLL_INTERVAL);
+})();
+</script>
+{% endblock %}

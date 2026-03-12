@@ -18,7 +18,14 @@ from flask import (
 
 from web.app import limiter
 from web.auth_web import login_required, get_access_token
-from web.tasks import fetch_subscriptions, get_task, start_scan, start_readiness_check, start_rbac_export
+from web.tasks import (
+    fetch_subscriptions,
+    get_task,
+    start_scan,
+    start_readiness_check,
+    start_rbac_export,
+    start_post_transfer,
+)
 
 main_bp = Blueprint("main", __name__)
 
@@ -365,3 +372,167 @@ def export_excel(task_id: str):
     response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     response.headers["Content-Disposition"] = f"attachment; filename=migration_report_{task_id}.xlsx"
     return response
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Post-Transfer: Connect Target Tenant
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/connect-target/<task_id>")
+@login_required
+def connect_target(task_id: str):
+    """Show the target-tenant connection page."""
+    task = get_task(task_id, owner_id=_get_owner_id())
+    if task is None or task.result is None:
+        return render_template("error.html", message="No completed scan found."), 404
+
+    target_connected = session.get("target_tenant_connected", False)
+    target_user = session.get("target_tenant_user", {})
+
+    return render_template(
+        "connect_target.html",
+        task_id=task_id,
+        subscription_id=session.get("last_scan_sub", ""),
+        target_connected=target_connected,
+        target_user=target_user,
+        source_tenant_id=session.get("tenant_id", ""),
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Post-Transfer: Principal Mapping
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/principal-map/<task_id>")
+@login_required
+def principal_mapping(task_id: str):
+    """Show the principal mapping page."""
+    task = get_task(task_id, owner_id=_get_owner_id())
+    if task is None or task.result is None:
+        return render_template("error.html", message="No completed scan found."), 404
+
+    if not session.get("target_tenant_connected"):
+        flash("Please connect to the target tenant first.", "warning")
+        return redirect(url_for("main.connect_target", task_id=task_id))
+
+    # Check if we have a stored RBAC export for this scan
+    rbac_task_id = session.get("last_rbac_task_id", "")
+    rbac_task = get_task(rbac_task_id, owner_id=_get_owner_id()) if rbac_task_id else None
+    rbac_export = None
+    if rbac_task and rbac_task.result:
+        rbac_export = rbac_task.result.get("rbac_export", {}).get("export_data", {})
+
+    # Extract & resolve principals
+    from tenova.principal_map import extract_principals, resolve_source_principals, suggest_mappings
+
+    principals: list = []
+    if rbac_export:
+        principals = extract_principals(rbac_export)
+        # Resolve source display names
+        source_token = get_access_token()
+        if source_token:
+            resolve_source_principals(principals, source_token)
+        # Auto-suggest matches in target tenant
+        target_token = session.get("target_access_token", "")
+        if target_token:
+            suggest_mappings(principals, target_token)
+
+    return render_template(
+        "principal_map.html",
+        task_id=task_id,
+        subscription_id=session.get("last_scan_sub", ""),
+        principals=principals,
+        has_rbac_export=rbac_export is not None,
+        target_user=session.get("target_tenant_user", {}),
+    )
+
+
+@main_bp.route("/principal-map/<task_id>/save", methods=["POST"])
+@login_required
+@limiter.limit("10 per minute")
+def save_principal_mapping(task_id: str):
+    """Save the user-confirmed principal mapping and start post-transfer."""
+    task = get_task(task_id, owner_id=_get_owner_id())
+    if task is None or task.result is None:
+        return render_template("error.html", message="No completed scan found."), 404
+
+    if not session.get("target_tenant_connected"):
+        flash("Please connect to the target tenant first.", "warning")
+        return redirect(url_for("main.connect_target", task_id=task_id))
+
+    # Collect mapping from form: mapping_<old_id> = <new_id>
+    mapping: dict[str, str] = {}
+    for key, value in request.form.items():
+        if key.startswith("mapping_") and value.strip():
+            old_id = key[len("mapping_"):]
+            mapping[old_id] = value.strip()
+
+    session["principal_mapping"] = mapping
+
+    # Get RBAC export data if available
+    rbac_task_id = session.get("last_rbac_task_id", "")
+    rbac_task = get_task(rbac_task_id, owner_id=_get_owner_id()) if rbac_task_id else None
+    rbac_export = None
+    if rbac_task and rbac_task.result:
+        rbac_export = rbac_task.result.get("rbac_export", {}).get("export_data", {})
+
+    # Start post-transfer as a background task
+    target_token = session.get("target_access_token", "")
+    subscription_id = session.get("last_scan_sub", "")
+
+    pt_task_id = start_post_transfer(
+        access_token=target_token,
+        subscription_id=subscription_id,
+        scan_data=task.result,
+        rbac_export=rbac_export,
+        principal_mapping=mapping,
+        owner_id=_get_owner_id(),
+    )
+
+    return redirect(url_for("main.post_transfer_status", task_id=pt_task_id, scan_task_id=task_id))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Post-Transfer: Execution & Results
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/post-transfer/<task_id>")
+@login_required
+def post_transfer_status(task_id: str):
+    """Show post-transfer execution progress / results."""
+    task = get_task(task_id, owner_id=_get_owner_id())
+    if task is None:
+        return render_template("error.html", message="Task not found."), 404
+
+    scan_task_id = request.args.get("scan_task_id", "")
+
+    return render_template(
+        "post_transfer.html",
+        task=task,
+        task_id=task_id,
+        scan_task_id=scan_task_id,
+        subscription_id=session.get("last_scan_sub", ""),
+        target_user=session.get("target_tenant_user", {}),
+    )
+
+
+@main_bp.route("/api/post-transfer/<task_id>")
+@login_required
+@limiter.limit("60 per minute")
+def api_post_transfer_status(task_id: str):
+    """Return post-transfer task status as JSON (for polling)."""
+    task = get_task(task_id, owner_id=_get_owner_id())
+    if task is None:
+        return jsonify({"error": "not found"}), 404
+
+    payload: dict = {
+        "task_id": task.task_id,
+        "status": task.status.value,
+        "task_type": task.task_type,
+    }
+    if task.result:
+        payload["result"] = task.result
+    if task.error:
+        payload["error"] = task.error
+
+    return jsonify(payload)
