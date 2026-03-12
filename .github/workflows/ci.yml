@@ -34,7 +34,7 @@ jobs:
         run: python -m pytest tests/ -v --tb=short
 
       - name: Dependency vulnerability scan (pip-audit)
-        run: pip-audit --strict
+        run: pip-audit --strict --skip-editable
 
       - name: Generate SBOM (CycloneDX)
         if: matrix.python-version == '3.12'
