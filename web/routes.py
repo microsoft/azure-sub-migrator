@@ -7,6 +7,7 @@ import re
 from flask import (
     Blueprint,
     current_app,
+    flash,
     jsonify,
     make_response,
     redirect,
