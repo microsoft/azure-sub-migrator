@@ -4,17 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from tenova.target_tenant import (
     build_target_auth_url,
+    get_directory_object,
     redeem_target_auth_code,
-    search_users,
     search_groups,
     search_service_principals,
-    get_directory_object,
+    search_users,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────
 # build_target_auth_url

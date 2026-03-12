@@ -1,8 +1,16 @@
 name: CD
 
+# Both branches deploy to the staging slot first (never directly to production).
+# main additionally swaps staging → production after a health check.
+# See: https://learn.microsoft.com/azure/app-service/deploy-best-practices#use-deployment-slots
+
 on:
   push:
     branches: [main, feat/post-transfer]
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   test:
@@ -23,9 +31,9 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short
 
+  # ── Stage 1: deploy to the staging slot (both branches) ──────────
   deploy-staging:
     needs: test
-    if: github.ref == 'refs/heads/feat/post-transfer'
     runs-on: ubuntu-latest
     environment:
       name: staging
@@ -42,28 +50,37 @@ jobs:
       - name: Create deployment package
         run: |
           pip install --target=".python_packages/lib/site-packages" -r requirements.txt
-          zip -r deploy.zip . -x ".git/*" ".github/*" "tests/*" ".python_packages/*" "*.pyc" "__pycache__/*" ".coverage" "*.egg-info/*" ".venv/*" "docs/*" "*.zip" "*.xml"
+          zip -r deploy.zip . \
+            -x ".git/*" ".github/*" "tests/*" ".python_packages/*" \
+               "*.pyc" "__pycache__/*" ".coverage" "*.egg-info/*" \
+               ".venv/*" "docs/*" "*.zip" "*.xml"
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to staging slot
         uses: azure/webapps-deploy@v3
         with:
           app-name: tenova-app
           slot-name: staging
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_STAGING }}
           package: deploy.zip
 
-      - name: Health check
+      - name: Health check staging
         run: |
           sleep 30
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://tenova-app-staging.azurewebsites.net/)
-          echo "Health check status: $STATUS"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://tenova-app-staging.azurewebsites.net/)
+          echo "Staging health check: $STATUS"
           if [ "$STATUS" -ge 500 ]; then
             echo "::error::Staging health check failed with status $STATUS"
             exit 1
           fi
 
-  deploy-production:
-    needs: test
+  # ── Stage 2: swap staging → production (main only) ───────────────
+  swap-to-production:
+    needs: deploy-staging
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
@@ -71,31 +88,31 @@ jobs:
       url: https://tenova-app.azurewebsites.net
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Login to Azure
+        uses: azure/login@v2
         with:
-          python-version: "3.12"
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Create deployment package
+      - name: Swap staging slot into production
         run: |
-          pip install --target=".python_packages/lib/site-packages" -r requirements.txt
-          zip -r deploy.zip . -x ".git/*" ".github/*" "tests/*" ".python_packages/*" "*.pyc" "__pycache__/*" ".coverage" "*.egg-info/*" ".venv/*" "docs/*" "*.zip" "*.xml"
+          az webapp deployment slot swap \
+            --resource-group rg-tenova \
+            --name tenova-app \
+            --slot staging \
+            --target-slot production
 
-      - name: Deploy to production
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: tenova-app
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_PROD }}
-          package: deploy.zip
-
-      - name: Health check
+      - name: Health check production
         run: |
           sleep 30
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://tenova-app.azurewebsites.net/)
-          echo "Health check status: $STATUS"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://tenova-app.azurewebsites.net/)
+          echo "Production health check: $STATUS"
           if [ "$STATUS" -ge 500 ]; then
-            echo "::error::Production health check failed with status $STATUS"
+            echo "::error::Production health check failed – rolling back"
+            az webapp deployment slot swap \
+              --resource-group rg-tenova \
+              --name tenova-app \
+              --slot staging \
+              --target-slot production
             exit 1
           fi

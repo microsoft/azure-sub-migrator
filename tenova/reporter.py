@@ -110,8 +110,8 @@ def write_plan_report(plan: dict[str, Any], output_path: Path) -> Path:
     _h("8. Complete ALL **Post-Transfer Actions** listed above.")
     _h("9. Recreate role assignments and managed identities in the target tenant.")
     _h("10. Validate all services in the target tenant.")
-    _h(f"\n> **Reference:** [Transfer an Azure subscription to a different Microsoft Entra directory]"
-        f"(https://learn.microsoft.com/en-us/azure/role-based-access-control/transfer-subscription)\n")
+    _h("\n> **Reference:** [Transfer an Azure subscription to a different Microsoft Entra directory]"
+        "(https://learn.microsoft.com/en-us/azure/role-based-access-control/transfer-subscription)\n")
 
     # Write
     output_path.parent.mkdir(parents=True, exist_ok=True)

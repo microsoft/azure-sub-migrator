@@ -6,7 +6,6 @@ import io
 
 from tenova.report_export import generate_excel, generate_pdf
 
-
 # ── Shared fixtures ───────────────────────────────────────────────────
 
 _SAMPLE_SCAN = {

@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from tenova.principal_map import (
+    _friendly_type,
+    build_mapping,
     extract_principals,
     resolve_source_principals,
     suggest_mappings,
-    build_mapping,
-    _friendly_type,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────
 # extract_principals

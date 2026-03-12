@@ -20,17 +20,17 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 
 from azure.core.credentials import AccessToken, TokenCredential
 
-from tenova.scanner import scan_subscription, list_subscriptions
-from tenova.readiness import check_readiness
-from tenova.rbac import export_rbac
-from tenova.post_transfer import run_post_transfer
 from tenova.logger import get_logger
+from tenova.post_transfer import run_post_transfer
+from tenova.rbac import export_rbac
+from tenova.readiness import check_readiness
+from tenova.scanner import list_subscriptions, scan_subscription
 
 logger = get_logger("tasks")
 
@@ -271,7 +271,7 @@ def _run_rbac_export(task: TaskResult, access_token: str, subscription_id: str) 
         export_path = export_rbac(cred, subscription_id)
         # Read the exported JSON to send back as the result
         import json as _json
-        with open(export_path, "r") as f:
+        with open(export_path) as f:
             export_data = _json.load(f)
         task.result = {
             "rbac_export": {

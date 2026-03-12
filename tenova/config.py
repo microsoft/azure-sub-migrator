@@ -38,14 +38,14 @@ class MigrationConfig:
     # Helpers
     # ------------------------------------------------------------------ #
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "MigrationConfig":
+    def from_yaml(cls, path: str | Path) -> MigrationConfig:
         """Load configuration from a YAML file."""
         with open(path, encoding="utf-8") as fh:
             data: dict = yaml.safe_load(fh) or {}
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
     @classmethod
-    def from_env(cls) -> "MigrationConfig":
+    def from_env(cls) -> MigrationConfig:
         """Load configuration from environment variables (AZ_MIGRATE_ prefix)."""
         prefix = "AZ_MIGRATE_"
         env_map = {

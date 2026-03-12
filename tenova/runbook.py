@@ -25,7 +25,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-
 # ──────────────────────────────────────────────────────────────────────
 # CLI command templates per resource type
 # ──────────────────────────────────────────────────────────────────────
@@ -731,7 +730,7 @@ def generate_runbook(
     transfer_safe_count = len(scan_result.get("transfer_safe", []))
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    sub_short = subscription_id[:8]
+    subscription_id[:8]
 
     lines: list[str] = []
     ln = lines.append
@@ -771,7 +770,7 @@ def generate_runbook(
 
     for resource in requires_action:
         rtype = resource.get("type", "")
-        timing = resource.get("timing", "post")
+        resource.get("timing", "post")
         templates = _CLI_TEMPLATES.get(rtype)
 
         if templates:
@@ -880,7 +879,7 @@ def generate_runbook(
         ln("")
         for r in manual_steps:
             ln(f"- **`{r.get('name', '')}`** ({r.get('type', '')})")
-            timing = r.get("timing", "post").upper()
+            r.get("timing", "post").upper()
             pre_action = r.get("pre_action", "")
             post_action = r.get("post_action", "")
             doc_url = r.get("doc_url", "")

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from tenova.runbook import enrich_with_commands, generate_runbook
 
-
 # ── Shared fixtures ───────────────────────────────────────────────────
 
 _SAMPLE_SCAN = {

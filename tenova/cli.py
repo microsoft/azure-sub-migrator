@@ -458,8 +458,8 @@ def generate_runbook_cmd(ctx: click.Context, subscription_id: str, target_tenant
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.scanner import scan_subscription
     from tenova.runbook import generate_runbook
+    from tenova.scanner import scan_subscription
 
     console.print(f"[bold cyan]Scanning subscription {subscription_id}…[/]")
     scan_result = scan_subscription(credential, subscription_id)
@@ -476,7 +476,7 @@ def generate_runbook_cmd(ctx: click.Context, subscription_id: str, target_tenant
     safe_count = len(scan_result.get("transfer_safe", []))
     console.print(f"[bold green]✔ Runbook saved to:[/] {filepath}")
     console.print(f"  {safe_count} transfer-safe, {action_count} requires-action resources.")
-    console.print(f"  Open the Markdown file for step-by-step instructions with CLI commands.")
+    console.print("  Open the Markdown file for step-by-step instructions with CLI commands.")
 
 
 @cli.command("readiness-check")
@@ -505,8 +505,8 @@ def readiness_check_cmd(ctx: click.Context, subscription_id: str) -> None:
     console.print(f"[bold cyan]Running readiness check for subscription {subscription_id}…[/]")
     result = check_readiness(credential, subscription_id)
 
-    from rich.table import Table
     from rich.panel import Panel
+    from rich.table import Table
 
     # Overall verdict
     if result["ready"]:

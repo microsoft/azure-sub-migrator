@@ -3,20 +3,17 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock, patch, call
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from tenova.post_transfer import (
-    run_post_transfer,
-    _restore_rbac,
-    _update_keyvault,
-    _update_sql_admin,
-    _update_app_service_auth,
     _document_managed_identity,
     _filter_by_type,
+    _restore_rbac,
+    _update_app_service_auth,
+    _update_keyvault,
+    _update_sql_admin,
+    run_post_transfer,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────
 # _filter_by_type

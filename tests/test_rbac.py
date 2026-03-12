@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import json
-import uuid
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from tenova.rbac import (
     export_rbac,
     import_rbac,
     list_custom_roles,
-    list_role_assignments,
     list_managed_identities,
+    list_role_assignments,
 )
 
 
@@ -194,7 +190,9 @@ class TestImportRbac:
                 {
                     "name": "My Custom Role",
                     "description": "Custom reader",
-                    "permissions": [{"actions": ["*/read"], "not_actions": [], "data_actions": [], "not_data_actions": []}],
+                    "permissions": [
+                        {"actions": ["*/read"], "not_actions": [], "data_actions": [], "not_data_actions": []}
+                    ],
                     "assignable_scopes": ["/subscriptions/sub-1"],
                 },
             ],

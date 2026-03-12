@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+
 from flask import (
     Blueprint,
     current_app,
@@ -18,14 +19,14 @@ from flask import (
 )
 
 from web.app import limiter
-from web.auth_web import login_required, get_access_token
+from web.auth_web import get_access_token, login_required
 from web.tasks import (
     fetch_subscriptions,
     get_task,
-    start_scan,
-    start_readiness_check,
-    start_rbac_export,
     start_post_transfer,
+    start_rbac_export,
+    start_readiness_check,
+    start_scan,
 )
 
 main_bp = Blueprint("main", __name__)

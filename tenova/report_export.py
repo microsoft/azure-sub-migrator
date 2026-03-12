@@ -335,7 +335,10 @@ def generate_excel(
     ws_action = wb.create_sheet("Requires Action")
     ws_action.sheet_properties.tabColor = "CC3333"
 
-    action_headers = ["Name", "Type", "Resource Group", "Timing", "Pre-Transfer Action", "Post-Transfer Action", "MS Learn Docs"]
+    action_headers = [
+        "Name", "Type", "Resource Group", "Timing",
+        "Pre-Transfer Action", "Post-Transfer Action", "MS Learn Docs",
+    ]
     action_fill = PatternFill(start_color="CC3333", end_color="CC3333", fill_type="solid")
     for col_idx, header in enumerate(action_headers, 1):
         cell = ws_action.cell(row=1, column=col_idx, value=header)
@@ -361,7 +364,11 @@ def generate_excel(
             r.get("post_action", "") or "-",
             r.get("doc_url", "") or "-",
         ]
-        stripe = PatternFill(start_color="FFF5F5", end_color="FFF5F5", fill_type="solid") if excel_row % 2 == 0 else None
+        stripe = (
+            PatternFill(start_color="FFF5F5", end_color="FFF5F5", fill_type="solid")
+            if excel_row % 2 == 0
+            else None
+        )
         for col_idx, val in enumerate(values, 1):
             cell = ws_action.cell(row=excel_row, column=col_idx, value=val)
             cell.border = thin_border

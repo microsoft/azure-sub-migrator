@@ -40,7 +40,10 @@ class TestHelpers:
         assert _extract_display_name(rid, "vm1") == "vm1"
 
     def test_display_name_child_resource(self):
-        rid = "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/ArcBox-Win2K22/extensions/AzureMonitorWindowsAgent"
+        rid = (
+            "/subscriptions/sub1/resourceGroups/rg1/providers/"
+            "Microsoft.Compute/virtualMachines/ArcBox-Win2K22/extensions/AzureMonitorWindowsAgent"
+        )
         assert _extract_display_name(rid, "AzureMonitorWindowsAgent") == "ArcBox-Win2K22/AzureMonitorWindowsAgent"
 
     def test_display_name_none_id(self):
@@ -69,7 +72,9 @@ class TestScanSubscription:
     @patch("tenova.scanner._collect_policy_items", return_value=[])
     @patch("tenova.scanner._query_resource_graph", return_value=set())
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_classifies_resources_static(self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential):
+    def test_classifies_resources_static(
+        self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential
+    ):
         """Static list flags Key Vault even when Resource Graph returns nothing."""
         vm = MagicMock()
         vm.id = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
@@ -112,7 +117,9 @@ class TestScanSubscription:
     @patch("tenova.scanner._collect_policy_items", return_value=[])
     @patch("tenova.scanner._query_resource_graph")
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_graph_detects_resource_not_in_static_list(self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential):
+    def test_graph_detects_resource_not_in_static_list(
+        self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential
+    ):
         """Resource Graph flags a resource type that is NOT in the static list."""
         # A custom resource type not in IMPACTED_RESOURCE_TYPES
         custom = MagicMock()
@@ -139,7 +146,9 @@ class TestScanSubscription:
     @patch("tenova.scanner._collect_policy_items", return_value=[])
     @patch("tenova.scanner._query_resource_graph")
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_both_layers_flag_resource(self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential):
+    def test_both_layers_flag_resource(
+        self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential
+    ):
         """Resource detected by both Graph AND static list shows combined detection."""
         kv = MagicMock()
         kv.id = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/kv1"
@@ -162,7 +171,9 @@ class TestScanSubscription:
     @patch("tenova.scanner._collect_policy_items")
     @patch("tenova.scanner._query_resource_graph", return_value=set())
     @patch("tenova.scanner.ResourceManagementClient")
-    def test_policy_items_merged_into_requires_action(self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential):
+    def test_policy_items_merged_into_requires_action(
+        self, mock_client_cls, mock_graph, mock_policy, mock_rbac, mock_locks, mock_credential
+    ):
         """Policy items from _collect_policy_items are appended to requires_action."""
         vm = MagicMock()
         vm.id = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
@@ -345,7 +356,7 @@ class TestCollectRbacItems:
         assert "Storage Reader Plus" in result[0]["name"]
         # Verify filter was passed
         mock_client_cls.return_value.role_definitions.list.assert_called_once_with(
-            f"/subscriptions/sub-1",
+            "/subscriptions/sub-1",
             filter="type eq 'CustomRole'",
         )
 
@@ -460,8 +471,14 @@ class TestFindParentId:
         assert _find_parent_id(rid) == expected
 
     def test_deeply_nested_returns_immediate_parent(self):
-        rid = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1/extensions/ext1/subThings/sub1"
-        expected = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1/extensions/ext1"
+        rid = (
+            "/subscriptions/s/resourceGroups/rg1/providers/"
+            "Microsoft.Compute/virtualMachines/vm1/extensions/ext1/subThings/sub1"
+        )
+        expected = (
+            "/subscriptions/s/resourceGroups/rg1/providers/"
+            "Microsoft.Compute/virtualMachines/vm1/extensions/ext1"
+        )
         assert _find_parent_id(rid) == expected
 
     def test_empty_string_returns_none(self):

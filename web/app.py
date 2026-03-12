@@ -97,8 +97,8 @@ def create_app() -> Flask:
         from cryptography.hazmat.primitives.serialization import (
             Encoding,
             NoEncryption,
-            pkcs12,
             PrivateFormat,
+            pkcs12,
         )
 
         pfx_data = Path(pfx_path).read_bytes()
@@ -121,8 +121,8 @@ def create_app() -> Flask:
     app.config["OUTPUT_DIR"] = os.environ.get("MIGRATION_OUTPUT_DIR", "migration_output")
 
     # ── Register blueprints ──────────────────────────────────────────
-    from web.routes import main_bp
     from web.auth_web import auth_bp
+    from web.routes import main_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
@@ -158,7 +158,8 @@ def create_app() -> Flask:
         )
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            f"script-src 'nonce-{nonce}' 'self' https://cdn.jsdelivr.net https://code.jquery.com https://cdn.datatables.net; "
+            f"script-src 'nonce-{nonce}' 'self' https://cdn.jsdelivr.net "
+            f"https://code.jquery.com https://cdn.datatables.net; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.datatables.net; "
             "font-src 'self' https://cdn.jsdelivr.net; "
             "img-src 'self' data:; "
