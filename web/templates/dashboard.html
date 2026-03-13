@@ -783,11 +783,33 @@ $(function () {
               html += '<table class="table table-sm table-bordered mb-0">' +
                 '<thead><tr><th>Operation</th><th>Status</th><th>Details</th></tr></thead><tbody>';
               ops.forEach(function (op) {
-                var badge = op.status === 'succeeded' ? 'success'
-                  : op.status === 'skipped' ? 'secondary' : 'danger';
+                var st = op.status || '';
+                var badge = st === 'succeeded' ? 'success'
+                  : st === 'skipped' ? 'secondary'
+                  : st === 'manual' ? 'info'
+                  : st === 'partial' ? 'warning' : 'danger';
+                // Build details: show error message for failures, or summary from details array
+                var detail = '';
+                if (op.error) {
+                  detail = '<span class="text-danger">' + op.error + '</span>';
+                } else if (op.details && op.details.length > 0) {
+                  var summary = op.details[0];
+                  if (summary && summary.action === 'Summary') {
+                    var parts = [];
+                    Object.keys(summary).forEach(function (k) {
+                      if (k !== 'action' && k !== 'status') {
+                        parts.push(k.replace(/_/g, ' ') + ': ' + summary[k]);
+                      }
+                    });
+                    detail = parts.join(', ');
+                  } else if (summary.note) {
+                    detail = summary.note;
+                  }
+                }
+                if (!detail) detail = '—';
                 html += '<tr><td>' + (op.name || op.operation || '') + '</td>' +
-                  '<td><span class="badge bg-' + badge + '">' + (op.status || '') + '</span></td>' +
-                  '<td class="small">' + (op.message || op.detail || '—') + '</td></tr>';
+                  '<td><span class="badge bg-' + badge + '">' + st + '</span></td>' +
+                  '<td class="small">' + detail + '</td></tr>';
               });
               html += '</tbody></table>';
             }
