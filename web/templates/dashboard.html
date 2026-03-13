@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Dashboard – Tenova{% endblock %}
 
+{% block extra_head %}
+<style nonce="{{ csp_nonce }}">
+  .phase-card { transition: all 0.2s; }
+  .phase-card:hover { transform: translateY(-2px); }
+  .step-icon { font-size: 1.4rem; width: 2rem; text-align: center; }
+  .step-pending .step-icon { color: var(--bs-secondary); }
+  .step-running .step-icon { color: var(--bs-info); }
+  .step-done .step-icon { color: var(--bs-success); }
+  .step-failed .step-icon { color: var(--bs-danger); }
+  .step-manual .step-icon { color: var(--bs-warning); }
+  .portal-link { font-size: 0.85rem; }
+  .nav-pills .nav-link { font-weight: 500; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h3><i class="bi bi-speedometer2 me-2"></i>Dashboard</h3>
@@ -16,11 +31,32 @@
   </div>
 </div>
 
+<!-- Tab navigation -->
+<ul class="nav nav-pills mb-4" id="dashTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="subs-tab" data-bs-toggle="pill"
+            data-bs-target="#subs-pane" type="button" role="tab">
+      <i class="bi bi-collection me-1"></i>Subscriptions
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="workflow-tab" data-bs-toggle="pill"
+            data-bs-target="#workflow-pane" type="button" role="tab">
+      <i class="bi bi-arrow-left-right me-1"></i>Migration Workflow
+    </button>
+  </li>
+</ul>
+
 {% if error %}
 <div class="alert alert-danger">
   <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
 </div>
 {% endif %}
+
+<div class="tab-content" id="dashTabContent">
+
+<!-- ═══════════════════════════════════════ SUBSCRIPTIONS TAB ═══════ -->
+<div class="tab-pane fade show active" id="subs-pane" role="tabpanel" tabindex="0">
 
 {% if subscriptions %}
 <div class="card shadow-sm">
@@ -85,6 +121,193 @@
   <i class="bi bi-info-circle me-2"></i>No subscriptions found. Make sure your account has access.
 </div>
 {% endif %}
+
+</div><!-- end subs-pane -->
+
+<!-- ═══════════════════════════════════════ WORKFLOW TAB ════════════ -->
+<div class="tab-pane fade" id="workflow-pane" role="tabpanel" tabindex="0">
+
+{% if has_bundle %}
+<div class="alert alert-info d-flex align-items-center mb-4">
+  <i class="bi bi-box-seam-fill me-2 fs-5"></i>
+  <div>
+    <strong>Bundle loaded</strong> from
+    <code>{{ bundle_manifest.get('subscription_id', '')[:8] }}…</code>
+    (created {{ bundle_manifest.get('created_at', '')[:19] }}).
+    {{ bundle_manifest.get('files', [])|length }} artifacts ready for restoration.
+  </div>
+</div>
+{% endif %}
+
+<!-- Phase 1: Pre-Transfer -->
+<div class="card shadow-sm mb-4 border-danger phase-card">
+  <div class="card-header bg-danger bg-opacity-10 fw-semibold">
+    <i class="bi bi-1-circle me-2"></i>Phase 1: Pre-Transfer
+    <span class="badge bg-danger float-end">Before transfer</span>
+  </div>
+  <div class="card-body">
+    <div class="list-group list-group-flush">
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-pending" id="step-scan">
+        <span class="step-icon"><i class="bi bi-search"></i></span>
+        <div class="flex-grow-1">
+          <strong>Scan subscription</strong>
+          <div class="text-body-secondary small">Enumerate all resources and identify tenant-bound dependencies.</div>
+        </div>
+        <button class="btn btn-outline-primary btn-sm" onclick="document.getElementById('subs-tab').click();">
+          <i class="bi bi-play-fill me-1"></i>Go to Subscriptions
+        </button>
+      </div>
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-pending" id="step-readiness">
+        <span class="step-icon"><i class="bi bi-shield-check"></i></span>
+        <div class="flex-grow-1">
+          <strong>Readiness check</strong>
+          <div class="text-body-secondary small">Detect blockers (AKS, Databricks, SQL with Entra auth, etc.) before transfer.</div>
+        </div>
+        <span class="badge bg-secondary">After scan</span>
+      </div>
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-pending" id="step-export">
+        <span class="step-icon"><i class="bi bi-box-arrow-down"></i></span>
+        <div class="flex-grow-1">
+          <strong>Export pre-transfer artifacts</strong>
+          <div class="text-body-secondary small">
+            Automated export of RBAC assignments, custom roles, policies, locks, Key Vault access policies, and managed identities.
+          </div>
+        </div>
+        <span class="badge bg-secondary">After scan</span>
+      </div>
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-pending" id="step-bundle">
+        <span class="step-icon"><i class="bi bi-file-earmark-zip"></i></span>
+        <div class="flex-grow-1">
+          <strong>Download migration bundle</strong>
+          <div class="text-body-secondary small">Save the .zip bundle to your machine — you'll upload it after the transfer.</div>
+        </div>
+        <span class="badge bg-secondary">After export</span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Phase 2: Transfer -->
+<div class="card shadow-sm mb-4 border-primary phase-card">
+  <div class="card-header bg-primary bg-opacity-10 fw-semibold">
+    <i class="bi bi-2-circle me-2"></i>Phase 2: Transfer Subscription
+    <span class="badge bg-primary float-end">Azure Portal</span>
+  </div>
+  <div class="card-body">
+    <div class="list-group list-group-flush">
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-manual">
+        <span class="step-icon"><i class="bi bi-arrow-right-circle"></i></span>
+        <div class="flex-grow-1">
+          <strong>Change directory in Azure Portal</strong>
+          <div class="text-body-secondary small">
+            The subscription transfer must be done in the Azure Portal. Click below to open the exact page.
+          </div>
+          {% if subscription_id %}
+          <a href="https://portal.azure.com/#@/resource/subscriptions/{{ subscription_id }}/changeDirectory"
+             target="_blank" rel="noopener" class="btn btn-warning btn-sm mt-2">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Open Change Directory in Portal
+          </a>
+          {% else %}
+          <span class="text-body-secondary small fst-italic">Scan a subscription first to enable the Portal link.</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
+        <span class="step-icon"><i class="bi bi-clock-history"></i></span>
+        <div class="flex-grow-1">
+          <strong>Wait for propagation</strong>
+          <div class="text-body-secondary small">Directory changes can take several minutes. Sign out and back in after transfer.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Phase 3: Post-Transfer -->
+<div class="card shadow-sm mb-4 border-warning phase-card">
+  <div class="card-header bg-warning bg-opacity-10 fw-semibold">
+    <i class="bi bi-3-circle me-2"></i>Phase 3: Post-Transfer Restoration
+    <span class="badge bg-warning text-dark float-end">After transfer</span>
+  </div>
+  <div class="card-body">
+    <div class="list-group list-group-flush">
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
+        <span class="step-icon"><i class="bi bi-box-arrow-in-up"></i></span>
+        <div class="flex-grow-1">
+          <strong>Upload migration bundle</strong>
+          <div class="text-body-secondary small">Upload the .zip bundle from Phase 1 to restore all exported artifacts.</div>
+        </div>
+        <a href="{{ url_for('main.upload_bundle_page') }}" class="btn btn-outline-warning btn-sm">
+          <i class="bi bi-upload me-1"></i>Upload Bundle
+        </a>
+      </div>
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
+        <span class="step-icon"><i class="bi bi-people"></i></span>
+        <div class="flex-grow-1">
+          <strong>Principal mapping</strong>
+          <div class="text-body-secondary small">Map source-tenant users/groups/SPs to their equivalents in the target tenant.</div>
+        </div>
+        <span class="badge bg-secondary">After upload</span>
+      </div>
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
+        <span class="step-icon"><i class="bi bi-gear"></i></span>
+        <div class="flex-grow-1">
+          <strong>Automated restoration</strong>
+          <div class="text-body-secondary small">
+            Recreate RBAC assignments &amp; custom roles, restore policies &amp; definitions,
+            restore locks, update Key Vault access, toggle managed identities, and rotate storage keys.
+          </div>
+        </div>
+        <span class="badge bg-secondary">After mapping</span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Phase 4: Validation -->
+<div class="card shadow-sm mb-4 border-success phase-card">
+  <div class="card-header bg-success bg-opacity-10 fw-semibold">
+    <i class="bi bi-4-circle me-2"></i>Phase 4: Validation
+    <span class="badge bg-success float-end">Verify</span>
+  </div>
+  <div class="card-body">
+    <div class="list-group list-group-flush">
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
+        <span class="step-icon"><i class="bi bi-search"></i></span>
+        <div class="flex-grow-1">
+          <strong>Run follow-up scan</strong>
+          <div class="text-body-secondary small">Scan the subscription in the target tenant to verify all resources are operational.</div>
+        </div>
+      </div>
+
+      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
+        <span class="step-icon"><i class="bi bi-check2-all"></i></span>
+        <div class="flex-grow-1">
+          <strong>Close maintenance window</strong>
+          <div class="text-body-secondary small">Confirm migration is complete and notify stakeholders.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</div><!-- end workflow-pane -->
+
+</div><!-- end tab-content -->
 {% endblock %}
 
 {% block extra_scripts %}

@@ -82,7 +82,19 @@ def dashboard():
         error = str(exc)
     user = session.get("user", {})
     tenant_id = session.get("tenant_id", "")
-    return render_template("dashboard.html", subscriptions=subs, user=user, error=error, tenant_id=tenant_id)
+    subscription_id = session.get("last_scan_sub", "")
+    bundle_manifest = session.get("bundle_manifest")
+    has_bundle = bundle_manifest is not None
+    return render_template(
+        "dashboard.html",
+        subscriptions=subs,
+        user=user,
+        error=error,
+        tenant_id=tenant_id,
+        subscription_id=subscription_id,
+        has_bundle=has_bundle,
+        bundle_manifest=bundle_manifest,
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────
