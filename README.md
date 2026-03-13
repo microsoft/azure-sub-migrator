@@ -57,7 +57,7 @@ tenova/
 ### Installation
 
 ```bash
-git clone https://github.com/learnazurewithmo/tenova.git
+git clone https://github.com/microsoft/tenova.git
 cd tenova
 
 # Create a virtual environment

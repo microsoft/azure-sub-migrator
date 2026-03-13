@@ -62,8 +62,8 @@ dev = [
 tenova = "tenova.cli:cli"
 
 [project.urls]
-Homepage = "https://github.com/learnazurewithmo/tenova"
-Issues = "https://github.com/learnazurewithmo/tenova/issues"
+Homepage = "https://github.com/microsoft/tenova"
+Issues = "https://github.com/microsoft/tenova/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
