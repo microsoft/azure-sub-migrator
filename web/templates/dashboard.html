@@ -325,6 +325,12 @@
 $(function () {
   $('#subsTable').DataTable({ paging: false, info: false });
 
+  // Auto-switch to workflow tab if ?tab=workflow in URL
+  var urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('tab') === 'workflow') {
+    $('#workflow-tab').tab('show');
+  }
+
   // ── Workflow state ──────────────────────────────────────────────
   var wfState = {
     subId: null,
@@ -414,19 +420,38 @@ $(function () {
               return;
             }
             var safe = d.transfer_safe_count || 0;
-            var action = d.requires_action_count || 0;
+            // Count children like the scan results page does
+            var actionList = d.requires_action || [];
+            var childCount = 0;
+            actionList.forEach(function (r) { childCount += (r.children || []).length; });
+            var action = actionList.length + childCount;
             var html = '<div class="alert alert-' + (action > 0 ? 'warning' : 'success') + ' mb-2">' +
               '<i class="bi bi-check-circle me-2"></i><strong>Scan complete:</strong> ' +
               safe + ' transfer-safe, ' + action + ' require action.' +
               '</div>';
 
             // Show resource summary table
-            if (d.requires_action && d.requires_action.length > 0) {
-              html += '<div class="table-responsive"><table class="table table-sm table-bordered mb-0">' +
-                '<thead><tr><th>Resource</th><th>Type</th><th>Issue</th></tr></thead><tbody>';
-              d.requires_action.forEach(function (r) {
+            if (actionList.length > 0) {
+              html += '<div class="table-responsive" style="max-height:400px;overflow-y:auto;"><table class="table table-sm table-bordered mb-0">' +
+                '<thead class="sticky-top"><tr><th>Resource</th><th>Type</th><th>Timing</th><th>Action Required</th></tr></thead><tbody>';
+              actionList.forEach(function (r) {
+                var timing = (r.timing || 'post').toUpperCase();
+                var timingBadge = timing === 'PRE' ? '<span class="badge bg-danger">PRE</span>'
+                  : timing === 'BOTH' ? '<span class="badge bg-warning text-dark">PRE+POST</span>'
+                  : '<span class="badge bg-info">POST</span>';
+                var actionText = r.pre_action || r.post_action || '—';
                 html += '<tr><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
-                  '</code></td><td>' + (r.reason || r.issue || '—') + '</td></tr>';
+                  '</code></td><td>' + timingBadge + '</td><td class="small">' + actionText + '</td></tr>';
+                // Render children inline too
+                (r.children || []).forEach(function (c) {
+                  var cTiming = (c.timing || 'post').toUpperCase();
+                  var cBadge = cTiming === 'PRE' ? '<span class="badge bg-danger">PRE</span>'
+                    : cTiming === 'BOTH' ? '<span class="badge bg-warning text-dark">PRE+POST</span>'
+                    : '<span class="badge bg-info">POST</span>';
+                  html += '<tr class="table-light"><td class="ps-4"><i class="bi bi-arrow-return-right text-secondary me-1"></i>' +
+                    (c.name || '') + '</td><td><code>' + (c.type || '') +
+                    '</code></td><td>' + cBadge + '</td><td class="small">' + (c.pre_action || c.post_action || '—') + '</td></tr>';
+                });
               });
               html += '</tbody></table></div>';
             }
@@ -478,14 +503,22 @@ $(function () {
               info.length + ' info.' + '</div>';
 
             if (blockers.length > 0) {
-              html += '<div class="mb-2"><strong class="text-danger">Blockers:</strong><ul class="mb-0">';
-              blockers.forEach(function (b) { html += '<li>' + (b.message || b) + '</li>'; });
-              html += '</ul></div>';
+              html += '<div class="mb-2"><strong class="text-danger">Blockers:</strong>';
+              html += '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action</th></tr></thead><tbody>';
+              blockers.forEach(function (b) {
+                html += '<tr><td>' + (b.name || '') + '</td><td><code>' + (b.type || '') + '</code></td>' +
+                  '<td>' + (b.issue || '') + '</td><td class="small">' + (b.action || '') + '</td></tr>';
+              });
+              html += '</tbody></table></div>';
             }
             if (warnings.length > 0) {
-              html += '<div><strong class="text-warning">Warnings:</strong><ul class="mb-0">';
-              warnings.forEach(function (w) { html += '<li>' + (w.message || w) + '</li>'; });
-              html += '</ul></div>';
+              html += '<div class="mb-2"><strong class="text-warning">Warnings:</strong>';
+              html += '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action</th></tr></thead><tbody>';
+              warnings.forEach(function (w) {
+                html += '<tr><td>' + (w.name || '') + '</td><td><code>' + (w.type || '') + '</code></td>' +
+                  '<td>' + (w.issue || '') + '</td><td class="small">' + (w.action || '') + '</td></tr>';
+              });
+              html += '</tbody></table></div>';
             }
             $r.html(html);
             markDone($('#wf-step-readiness'));

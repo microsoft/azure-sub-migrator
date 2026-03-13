@@ -761,7 +761,7 @@ def upload_bundle():
         f"for subscription {manifest.get('subscription_id', 'unknown')[:8]}…",
         "success",
     )
-    return redirect(url_for("main.workflow"))
+    return redirect(url_for("main.dashboard", tab="workflow"))
 
 
 # ──────────────────────────────────────────────────────────────────────
