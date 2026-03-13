@@ -563,6 +563,182 @@ def readiness_check_cmd(ctx: click.Context, subscription_id: str) -> None:
     )
 
 
+@cli.command("pre-transfer")
+@click.option("--subscription-id", "-s", required=True, help="Subscription ID to export.")
+@click.option(
+    "--output", "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output path for the migration bundle (.zip). Default: tenova_bundle_<sub>.zip",
+)
+@click.pass_context
+def pre_transfer_cmd(ctx: click.Context, subscription_id: str, output: Path | None) -> None:
+    """Run all pre-transfer exports and save a migration bundle.
+
+    Scans the subscription, exports RBAC, policies, locks, Key Vault
+    access policies, and managed identities, then writes everything to
+    a portable .zip bundle.
+    """
+    cfg: MigrationConfig = ctx.obj["config"]
+    cfg.subscription_id = subscription_id
+
+    try:
+        credential = get_credential(
+            method=cfg.auth_method,
+            tenant_id=cfg.source_tenant_id or None,
+            client_id=cfg.client_id or None,
+            client_secret=cfg.client_secret or None,
+        )
+    except Exception as exc:
+        console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
+        sys.exit(1)
+
+    from tenova.bundle import create_bundle
+    from tenova.pre_transfer import run_pre_transfer
+    from tenova.scanner import scan_subscription
+
+    # Step 1: Scan
+    console.print(f"[bold cyan]Scanning subscription {subscription_id}…[/]")
+    scan_result = scan_subscription(credential, subscription_id)
+
+    # Step 2: Pre-transfer exports
+    console.print("[bold cyan]Running pre-transfer exports…[/]")
+    pt_result = run_pre_transfer(credential, subscription_id, scan_result)
+
+    # Show step results
+    from rich.table import Table
+    table = Table(title="Pre-Transfer Export Results")
+    table.add_column("Step", style="cyan")
+    table.add_column("Status")
+    table.add_column("Items", justify="right")
+    for step in pt_result.get("steps", []):
+        status_style = "green" if step["status"] == "succeeded" else "red"
+        table.add_row(
+            step["name"],
+            f"[{status_style}]{step['status']}[/]",
+            str(step.get("count", "—")),
+        )
+    console.print(table)
+
+    # Step 3: Create bundle
+    source_tenant = cfg.source_tenant_id or "unknown"
+    bundle_bytes = create_bundle(
+        subscription_id=subscription_id,
+        source_tenant_id=source_tenant,
+        artifacts=pt_result.get("artifacts", {}),
+    )
+
+    bundle_path = output or Path(f"tenova_bundle_{subscription_id[:8]}.zip")
+    bundle_path.write_bytes(bundle_bytes)
+
+    console.print(f"\n[bold green]✔ Migration bundle saved to:[/] {bundle_path}")
+    console.print(f"  Size: {len(bundle_bytes):,} bytes")
+    console.print(f"  Artifacts: {len(pt_result.get('artifacts', {}))}")
+    console.print("\n[bold yellow]Next step:[/] Transfer the subscription in the Azure Portal,")
+    console.print("  then run [bold]tenova restore[/] with this bundle.")
+
+
+@cli.command("restore")
+@click.option("--subscription-id", "-s", required=True, help="Subscription ID (now in target tenant).")
+@click.option(
+    "--bundle", "-b",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Path to the migration bundle (.zip).",
+)
+@click.option(
+    "--mapping-file", "-m",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Principal mapping JSON file (old_id → new_id).",
+)
+@click.pass_context
+def restore_cmd(ctx: click.Context, subscription_id: str, bundle: Path, mapping_file: Path | None) -> None:
+    """Restore pre-transfer artifacts from a migration bundle.
+
+    Reads the .zip bundle and re-creates RBAC assignments, policies,
+    locks, and Key Vault access policies in the target tenant.
+    """
+    import json
+
+    cfg: MigrationConfig = ctx.obj["config"]
+
+    try:
+        credential = get_credential(
+            method=cfg.auth_method,
+            tenant_id=cfg.source_tenant_id or None,
+            client_id=cfg.client_id or None,
+            client_secret=cfg.client_secret or None,
+        )
+    except Exception as exc:
+        console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
+        sys.exit(1)
+
+    from tenova.bundle import BundleError, get_artifact, read_bundle
+    from tenova.post_transfer import run_post_transfer
+
+    # Read bundle
+    console.print(f"[bold cyan]Reading migration bundle: {bundle}…[/]")
+    try:
+        bundle_data = read_bundle(bundle.read_bytes())
+    except BundleError as exc:
+        console.print(f"[bold red]✘ Invalid bundle:[/] {exc}")
+        sys.exit(1)
+
+    manifest = bundle_data["manifest"]
+    artifacts = bundle_data["artifacts"]
+    console.print(f"  Bundle version: {manifest.get('bundle_version')}")
+    console.print(f"  Created: {manifest.get('created_at')}")
+    console.print(f"  Artifacts: {len(artifacts)}")
+
+    # Principal mapping
+    mapping: dict[str, str] = {}
+    if mapping_file:
+        mapping = json.loads(mapping_file.read_text(encoding="utf-8"))
+        console.print(f"  Principal mapping: {len(mapping)} entries from {mapping_file}")
+
+    # Build scan_data and rbac_export from bundle
+    scan_data = get_artifact(bundle_data, "scan_results", {})
+    rbac_export = None
+    rbac_assignments = get_artifact(bundle_data, "rbac_assignments")
+    rbac_custom_roles = get_artifact(bundle_data, "rbac_custom_roles")
+    if rbac_assignments or rbac_custom_roles:
+        rbac_export = {
+            "role_assignments": rbac_assignments or [],
+            "custom_roles": rbac_custom_roles or [],
+        }
+
+    # Run restoration
+    console.print("[bold cyan]Running post-transfer restoration…[/]")
+    result = run_post_transfer(
+        credential=credential,
+        subscription_id=subscription_id,
+        scan_data=scan_data,
+        rbac_export=rbac_export,
+        principal_mapping=mapping,
+        bundle_artifacts=artifacts,
+    )
+
+    # Show results
+    from rich.table import Table
+    table = Table(title="Post-Transfer Restoration Results")
+    table.add_column("Operation", style="cyan")
+    table.add_column("Status")
+    for op in result.get("operations", []):
+        status = op.get("status", "unknown")
+        style = "green" if status == "succeeded" else "yellow" if status in ("partial", "manual") else "red"
+        table.add_row(op["operation"], f"[{style}]{status}[/]")
+    console.print(table)
+
+    summary = result.get("summary", {})
+    console.print(
+        f"\n[bold]Summary:[/] {summary.get('total', 0)} operations — "
+        f"{summary.get('succeeded', 0)} succeeded, "
+        f"{summary.get('failed', 0)} failed, "
+        f"{summary.get('skipped', 0)} skipped."
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Entry-point
 # ──────────────────────────────────────────────────────────────────────

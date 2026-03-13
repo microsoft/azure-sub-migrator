@@ -28,6 +28,7 @@ from azure.core.credentials import AccessToken, TokenCredential
 
 from tenova.logger import get_logger
 from tenova.post_transfer import run_post_transfer
+from tenova.pre_transfer import run_pre_transfer
 from tenova.rbac import export_rbac
 from tenova.readiness import check_readiness
 from tenova.scanner import list_subscriptions, scan_subscription
@@ -155,6 +156,28 @@ def start_post_transfer(
     )
     thread.start()
     logger.info("Post-transfer task %s started for subscription %s", task_id, subscription_id)
+    return task_id
+
+
+def start_pre_transfer(
+    access_token: str,
+    subscription_id: str,
+    scan_data: dict[str, Any],
+    *,
+    owner_id: str = "",
+) -> str:
+    """Launch pre-transfer export in the background."""
+    task_id = str(uuid.uuid4())
+    task = TaskResult(task_id=task_id, task_type="pre_transfer", owner_id=owner_id)
+    _store_task(task)
+
+    thread = threading.Thread(
+        target=_run_pre_transfer,
+        args=(task, access_token, subscription_id, scan_data),
+        daemon=True,
+    )
+    thread.start()
+    logger.info("Pre-transfer task %s started for subscription %s", task_id, subscription_id)
     return task_id
 
 
@@ -299,6 +322,8 @@ def _run_post_transfer(
     scan_data: dict[str, Any],
     rbac_export: dict[str, Any] | None,
     principal_mapping: dict[str, str],
+    *,
+    bundle_artifacts: dict[str, Any] | None = None,
 ) -> None:
     """Execute post-transfer reconfiguration in a background thread."""
     task.status = TaskStatus.RUNNING
@@ -311,6 +336,7 @@ def _run_post_transfer(
             scan_data=scan_data,
             rbac_export=rbac_export,
             principal_mapping=principal_mapping,
+            bundle_artifacts=bundle_artifacts or {},
         )
         task.result = result
         task.status = TaskStatus.COMPLETED
@@ -319,6 +345,33 @@ def _run_post_transfer(
         task.error = _sanitise_error(exc)
         task.status = TaskStatus.FAILED
         logger.exception("Post-transfer task %s failed", task.task_id)
+    finally:
+        task.completed_at = datetime.now(timezone.utc)
+
+
+def _run_pre_transfer(
+    task: TaskResult,
+    access_token: str,
+    subscription_id: str,
+    scan_data: dict[str, Any],
+) -> None:
+    """Execute pre-transfer exports in a background thread."""
+    task.status = TaskStatus.RUNNING
+    task.started_at = datetime.now(timezone.utc)
+    try:
+        cred = _credential_from_token(access_token)
+        result = run_pre_transfer(
+            credential=cred,
+            subscription_id=subscription_id,
+            scan_data=scan_data,
+        )
+        task.result = result
+        task.status = TaskStatus.COMPLETED
+        logger.info("Pre-transfer task %s completed", task.task_id)
+    except Exception as exc:
+        task.error = _sanitise_error(exc)
+        task.status = TaskStatus.FAILED
+        logger.exception("Pre-transfer task %s failed", task.task_id)
     finally:
         task.completed_at = datetime.now(timezone.utc)
 

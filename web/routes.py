@@ -24,6 +24,7 @@ from web.tasks import (
     fetch_subscriptions,
     get_task,
     start_post_transfer,
+    start_pre_transfer,
     start_rbac_export,
     start_readiness_check,
     start_scan,
@@ -538,3 +539,176 @@ def api_post_transfer_status(task_id: str):
         payload["error"] = task.error
 
     return jsonify(payload)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Pre-Transfer Automation
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/pre-transfer", methods=["POST"])
+@login_required
+@limiter.limit("5 per minute")
+def pre_transfer():
+    """Start pre-transfer exports for a completed scan."""
+    scan_task_id = request.form.get("scan_task_id", "").strip()
+    if not scan_task_id:
+        return jsonify({"error": "scan_task_id is required"}), 400
+
+    scan_task = get_task(scan_task_id, owner_id=_get_owner_id())
+    if scan_task is None or scan_task.result is None:
+        return render_template("error.html", message="No completed scan found."), 404
+
+    token = get_access_token()
+    subscription_id = session.get("last_scan_sub", "")
+    task_id = start_pre_transfer(
+        token, subscription_id, scan_task.result, owner_id=_get_owner_id(),
+    )
+    session["last_pre_transfer_task"] = task_id
+    return redirect(url_for("main.pre_transfer_status", task_id=task_id, scan_task_id=scan_task_id))
+
+
+@main_bp.route("/pre-transfer/<task_id>")
+@login_required
+def pre_transfer_status(task_id: str):
+    """Show pre-transfer export progress / results."""
+    task = get_task(task_id, owner_id=_get_owner_id())
+    if task is None:
+        return render_template("error.html", message="Task not found."), 404
+
+    scan_task_id = request.args.get("scan_task_id", "")
+    return render_template(
+        "pre_transfer.html",
+        task=task,
+        task_id=task_id,
+        scan_task_id=scan_task_id,
+        subscription_id=session.get("last_scan_sub", ""),
+    )
+
+
+@main_bp.route("/api/pre-transfer/<task_id>")
+@login_required
+@limiter.limit("60 per minute")
+def api_pre_transfer_status(task_id: str):
+    """Return pre-transfer task status as JSON (for polling)."""
+    task = get_task(task_id, owner_id=_get_owner_id())
+    if task is None:
+        return jsonify({"error": "not found"}), 404
+
+    payload: dict = {
+        "task_id": task.task_id,
+        "status": task.status.value,
+        "task_type": task.task_type,
+    }
+    if task.result:
+        payload["steps"] = task.result.get("steps", [])
+        payload["summary"] = task.result.get("summary", {})
+        payload["overall_status"] = task.result.get("overall_status", "")
+    if task.error:
+        payload["error"] = task.error
+
+    return jsonify(payload)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Migration Bundle (Download)
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/bundle/download/<task_id>")
+@login_required
+def download_bundle(task_id: str):
+    """Download the migration bundle zip from a completed pre-transfer task."""
+    task = get_task(task_id, owner_id=_get_owner_id())
+    if task is None or task.result is None:
+        return render_template("error.html", message="Pre-transfer not complete."), 404
+
+    artifacts = task.result.get("artifacts", {})
+    if not artifacts:
+        return render_template("error.html", message="No artifacts found."), 404
+
+    from tenova.bundle import create_bundle
+
+    subscription_id = session.get("last_scan_sub", "")
+    source_tenant_id = session.get("tenant_id", "")
+
+    bundle_bytes = create_bundle(
+        subscription_id=subscription_id,
+        source_tenant_id=source_tenant_id,
+        artifacts=artifacts,
+    )
+
+    response = make_response(bundle_bytes)
+    response.headers["Content-Type"] = "application/zip"
+    sub_short = subscription_id[:8] if subscription_id else "unknown"
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename=tenova_bundle_{sub_short}.zip"
+    )
+    return response
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Migration Bundle (Upload) — for post-transfer restoration
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/bundle/upload", methods=["GET"])
+@login_required
+def upload_bundle_page():
+    """Show the bundle upload page."""
+    return render_template("upload_bundle.html")
+
+
+@main_bp.route("/bundle/upload", methods=["POST"])
+@login_required
+@limiter.limit("5 per minute")
+def upload_bundle():
+    """Process an uploaded migration bundle and show the workflow."""
+    if "bundle" not in request.files:
+        flash("No file uploaded.", "danger")
+        return redirect(url_for("main.upload_bundle_page"))
+
+    uploaded = request.files["bundle"]
+    if not uploaded.filename or not uploaded.filename.endswith(".zip"):
+        flash("Please upload a .zip migration bundle.", "danger")
+        return redirect(url_for("main.upload_bundle_page"))
+
+    from tenova.bundle import BundleError, read_bundle
+
+    try:
+        data = uploaded.read()
+        bundle = read_bundle(data)
+    except BundleError as exc:
+        flash(f"Invalid bundle: {exc}", "danger")
+        return redirect(url_for("main.upload_bundle_page"))
+
+    # Store bundle data in session for the workflow
+    manifest = bundle.get("manifest", {})
+    session["bundle_manifest"] = manifest
+    session["bundle_artifacts"] = bundle.get("artifacts", {})
+    session["last_scan_sub"] = manifest.get("subscription_id", "")
+
+    flash(
+        f"Bundle loaded: {len(bundle.get('artifacts', {}))} artifacts "
+        f"for subscription {manifest.get('subscription_id', 'unknown')[:8]}…",
+        "success",
+    )
+    return redirect(url_for("main.workflow"))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Migration Workflow — end-to-end orchestration page
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/workflow")
+@login_required
+def workflow():
+    """Show the migration workflow dashboard."""
+    subscription_id = session.get("last_scan_sub", "")
+    bundle_manifest = session.get("bundle_manifest")
+    has_bundle = bundle_manifest is not None
+
+    return render_template(
+        "workflow.html",
+        subscription_id=subscription_id,
+        has_bundle=has_bundle,
+        bundle_manifest=bundle_manifest,
+        source_tenant_id=session.get("tenant_id", ""),
+    )

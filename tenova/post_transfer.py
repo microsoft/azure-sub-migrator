@@ -36,6 +36,7 @@ def run_post_transfer(
     scan_data: dict[str, Any],
     rbac_export: dict[str, Any] | None,
     principal_mapping: dict[str, str],
+    **kwargs: Any,
 ) -> dict[str, Any]:
     """Run all post-transfer operations and return a summary.
 
@@ -102,6 +103,61 @@ def run_post_transfer(
             credential, subscription_id, mi,
         )
         results["operations"].append(mi_result)
+
+    # ── Bundle-driven restoration steps ──────────────────────────────
+    # These run only when a pre-transfer bundle is provided.
+    bundle_artifacts = kwargs.get("bundle_artifacts", {})
+
+    # 6) Policy assignment restoration
+    policy_data = bundle_artifacts.get("policy_assignments", [])
+    if policy_data:
+        policy_result = _restore_policy_assignments(
+            credential, subscription_id, policy_data,
+        )
+        results["operations"].append(policy_result)
+
+    # 7) Custom policy definition restoration
+    policy_def_data = bundle_artifacts.get("policy_definitions", [])
+    if policy_def_data:
+        policy_def_result = _restore_policy_definitions(
+            credential, subscription_id, policy_def_data,
+        )
+        results["operations"].append(policy_def_result)
+
+    # 8) Resource lock restoration
+    lock_data = bundle_artifacts.get("resource_locks", [])
+    if lock_data:
+        lock_result = _restore_resource_locks(
+            credential, subscription_id, lock_data,
+        )
+        results["operations"].append(lock_result)
+
+    # 9) Key Vault access policy restoration (from bundle)
+    kv_policy_data = bundle_artifacts.get("keyvault_policies", {})
+    if kv_policy_data and kv_policy_data.get("vaults"):
+        for vault_snapshot in kv_policy_data["vaults"]:
+            kv_result = _restore_keyvault_from_snapshot(
+                credential, subscription_id, vault_snapshot, principal_mapping,
+            )
+            results["operations"].append(kv_result)
+
+    # 10) Toggle system-assigned managed identities
+    sami_resources = _find_sami_resources(requires_action)
+    if sami_resources:
+        sami_result = _toggle_managed_identities(
+            credential, subscription_id, sami_resources,
+        )
+        results["operations"].append(sami_result)
+
+    # 11) Rotate storage account keys
+    storage_resources = _filter_by_type(
+        requires_action, "Microsoft.Storage/storageAccounts",
+    )
+    if storage_resources:
+        storage_result = _rotate_storage_keys(
+            credential, subscription_id, storage_resources,
+        )
+        results["operations"].append(storage_result)
 
     # Tally summary
     for op in results["operations"]:
@@ -498,8 +554,459 @@ def _document_managed_identity(
 
 
 # ──────────────────────────────────────────────────────────────────────
+# 6. Policy Assignment Restoration
+# ──────────────────────────────────────────────────────────────────────
+
+def _restore_policy_assignments(
+    credential: TokenCredential,
+    subscription_id: str,
+    policy_data: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Recreate policy assignments from pre-transfer export."""
+    op: dict[str, Any] = {
+        "operation": "Restore Policy Assignments",
+        "resource_type": "Microsoft.Authorization/policyAssignments",
+        "details": [],
+    }
+    created = 0
+    failed = 0
+
+    try:
+        from azure.mgmt.resource.policy import PolicyClient
+        client = PolicyClient(credential, subscription_id)
+
+        for pa in policy_data:
+            try:
+                # Re-scope to current subscription if needed
+                scope = pa.get("scope", f"/subscriptions/{subscription_id}")
+                if not scope.startswith(f"/subscriptions/{subscription_id}"):
+                    scope = f"/subscriptions/{subscription_id}"
+
+                params = {
+                    "policy_definition_id": pa["policy_definition_id"],
+                    "display_name": pa.get("display_name", ""),
+                    "description": pa.get("description", ""),
+                }
+                if pa.get("not_scopes"):
+                    params["not_scopes"] = pa["not_scopes"]
+                if pa.get("parameters"):
+                    params["parameters"] = pa["parameters"]
+                enforcement = pa.get("enforcement_mode", "Default")
+                if enforcement:
+                    params["enforcement_mode"] = enforcement
+
+                client.policy_assignments.create(
+                    scope=scope,
+                    policy_assignment_name=pa["name"],
+                    parameters=params,
+                )
+                created += 1
+            except Exception as exc:
+                err = str(exc)
+                if "PolicyAssignmentAlreadyExists" in err or "already exists" in err.lower():
+                    created += 1  # idempotent
+                else:
+                    failed += 1
+                    op["details"].append({
+                        "action": f"Create assignment '{pa.get('display_name', pa['name'])}'",
+                        "status": "failed",
+                        "error": err[:200],
+                    })
+
+        op["details"].insert(0, {
+            "action": "Summary",
+            "assignments_created": created,
+            "assignments_failed": failed,
+        })
+        op["status"] = "succeeded" if failed == 0 else "partial"
+        logger.info("Policy assignments: %d created, %d failed", created, failed)
+
+    except Exception as exc:
+        op["status"] = "failed"
+        op["error"] = str(exc)[:200]
+        logger.exception("Policy assignment restoration failed")
+
+    return op
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 7. Custom Policy Definition Restoration
+# ──────────────────────────────────────────────────────────────────────
+
+def _restore_policy_definitions(
+    credential: TokenCredential,
+    subscription_id: str,
+    definitions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Recreate custom policy definitions from pre-transfer export."""
+    op: dict[str, Any] = {
+        "operation": "Restore Custom Policy Definitions",
+        "resource_type": "Microsoft.Authorization/policyDefinitions",
+        "details": [],
+    }
+    created = 0
+    failed = 0
+
+    try:
+        from azure.mgmt.resource.policy import PolicyClient
+        client = PolicyClient(credential, subscription_id)
+
+        for pd_item in definitions:
+            try:
+                client.policy_definitions.create_or_update(
+                    policy_definition_name=pd_item["name"],
+                    parameters={
+                        "policy_type": "Custom",
+                        "mode": pd_item.get("mode", "All"),
+                        "display_name": pd_item.get("display_name", ""),
+                        "description": pd_item.get("description", ""),
+                        "policy_rule": pd_item.get("policy_rule", {}),
+                        "parameters": pd_item.get("parameters", {}),
+                        "metadata": pd_item.get("metadata", {}),
+                    },
+                )
+                created += 1
+            except Exception as exc:
+                failed += 1
+                op["details"].append({
+                    "action": f"Create definition '{pd_item.get('display_name', pd_item['name'])}'",
+                    "status": "failed",
+                    "error": str(exc)[:200],
+                })
+
+        op["details"].insert(0, {
+            "action": "Summary",
+            "definitions_created": created,
+            "definitions_failed": failed,
+        })
+        op["status"] = "succeeded" if failed == 0 else "partial"
+        logger.info("Policy definitions: %d created, %d failed", created, failed)
+
+    except Exception as exc:
+        op["status"] = "failed"
+        op["error"] = str(exc)[:200]
+        logger.exception("Policy definition restoration failed")
+
+    return op
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 8. Resource Lock Restoration
+# ──────────────────────────────────────────────────────────────────────
+
+def _restore_resource_locks(
+    credential: TokenCredential,
+    subscription_id: str,
+    lock_data: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Recreate resource locks from pre-transfer export."""
+    op: dict[str, Any] = {
+        "operation": "Restore Resource Locks",
+        "resource_type": "Microsoft.Authorization/locks",
+        "details": [],
+    }
+    created = 0
+    failed = 0
+
+    try:
+        from azure.mgmt.resource.locks import ManagementLockClient
+        client = ManagementLockClient(credential, subscription_id)
+
+        for lock in lock_data:
+            try:
+                params: dict[str, Any] = {
+                    "level": lock["level"],
+                }
+                if lock.get("notes"):
+                    params["notes"] = lock["notes"]
+
+                rg = lock.get("resource_group", "")
+                if rg:
+                    client.management_locks.create_or_update_at_resource_group_level(
+                        resource_group_name=rg,
+                        lock_name=lock["name"],
+                        parameters=params,
+                    )
+                else:
+                    client.management_locks.create_or_update_at_subscription_level(
+                        lock_name=lock["name"],
+                        parameters=params,
+                    )
+                created += 1
+            except Exception as exc:
+                failed += 1
+                op["details"].append({
+                    "action": f"Create lock '{lock['name']}'",
+                    "status": "failed",
+                    "error": str(exc)[:200],
+                })
+
+        op["details"].insert(0, {
+            "action": "Summary",
+            "locks_created": created,
+            "locks_failed": failed,
+        })
+        op["status"] = "succeeded" if failed == 0 else "partial"
+        logger.info("Resource locks: %d created, %d failed", created, failed)
+
+    except Exception as exc:
+        op["status"] = "failed"
+        op["error"] = str(exc)[:200]
+        logger.exception("Resource lock restoration failed")
+
+    return op
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 9. Key Vault restoration from bundle snapshot
+# ──────────────────────────────────────────────────────────────────────
+
+def _restore_keyvault_from_snapshot(
+    credential: TokenCredential,
+    subscription_id: str,
+    vault_snapshot: dict[str, Any],
+    principal_mapping: dict[str, str],
+) -> dict[str, Any]:
+    """Restore Key Vault access policies using the pre-transfer snapshot."""
+    name = vault_snapshot.get("name", "")
+    rg = vault_snapshot.get("resource_group", "")
+    op: dict[str, Any] = {
+        "operation": f"Key Vault (bundle): {name}",
+        "resource_type": "Microsoft.KeyVault/vaults",
+        "resource_name": name,
+        "details": [],
+    }
+
+    try:
+        from azure.mgmt.keyvault import KeyVaultManagementClient
+        client = KeyVaultManagementClient(credential, subscription_id)
+
+        # Get the current vault to read its tenant_id post-transfer
+        current_vault = client.vaults.get(rg, name)
+        new_tenant_id = str(current_vault.properties.tenant_id)
+
+        new_policies = []
+        for ap in vault_snapshot.get("access_policies", []):
+            old_oid = ap.get("object_id", "")
+            new_oid = principal_mapping.get(old_oid, old_oid)
+            new_policies.append({
+                "tenantId": new_tenant_id,
+                "objectId": new_oid,
+                "permissions": ap.get("permissions", {}),
+            })
+            op["details"].append({
+                "action": f"Map policy {old_oid} → {new_oid}",
+                "status": "mapped" if new_oid != old_oid else "kept",
+            })
+
+        client.vaults.create_or_update(
+            resource_group_name=rg,
+            vault_name=name,
+            parameters={
+                "location": vault_snapshot.get("location", current_vault.location),
+                "properties": {
+                    "tenantId": new_tenant_id,
+                    "sku": {
+                        "family": "A",
+                        "name": vault_snapshot.get("sku", str(current_vault.properties.sku.name)),
+                    },
+                    "accessPolicies": new_policies,
+                },
+            },
+        )
+        op["status"] = "succeeded"
+        logger.info("Key Vault '%s' restored from bundle (%d policies)", name, len(new_policies))
+
+    except Exception as exc:
+        op["status"] = "failed"
+        op["error"] = str(exc)[:200]
+        logger.exception("Key Vault '%s' bundle restoration failed", name)
+
+    return op
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 10. Toggle system-assigned managed identities
+# ──────────────────────────────────────────────────────────────────────
+
+def _toggle_managed_identities(
+    credential: TokenCredential,
+    subscription_id: str,
+    resources: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Disable and re-enable system-assigned managed identities.
+
+    After a tenant transfer, system-assigned identities get new
+    principal IDs.  Toggling them off/on forces the identity to be
+    re-provisioned in the new tenant.
+    """
+    op: dict[str, Any] = {
+        "operation": "Toggle System-Assigned Managed Identities",
+        "resource_type": "identity",
+        "details": [],
+    }
+    toggled = 0
+    failed = 0
+
+    try:
+        from azure.mgmt.resource import ResourceManagementClient
+        client = ResourceManagementClient(credential, subscription_id)
+
+        for r in resources:
+            resource_id = r.get("id", "")
+            name = r.get("name", "")
+            try:
+                # Use generic ARM PATCH to toggle identity
+                # Step 1: Disable
+                client.resources.begin_update_by_id(
+                    resource_id=resource_id,
+                    api_version=_get_api_version(r.get("type", "")),
+                    parameters={"identity": {"type": "None"}},
+                ).result()
+
+                # Step 2: Re-enable
+                client.resources.begin_update_by_id(
+                    resource_id=resource_id,
+                    api_version=_get_api_version(r.get("type", "")),
+                    parameters={"identity": {"type": "SystemAssigned"}},
+                ).result()
+
+                toggled += 1
+                op["details"].append({
+                    "action": f"Toggled identity on '{name}'",
+                    "status": "succeeded",
+                })
+            except Exception as exc:
+                failed += 1
+                op["details"].append({
+                    "action": f"Toggle identity on '{name}'",
+                    "status": "failed",
+                    "error": str(exc)[:200],
+                })
+
+        op["details"].insert(0, {
+            "action": "Summary",
+            "identities_toggled": toggled,
+            "identities_failed": failed,
+        })
+        op["status"] = "succeeded" if failed == 0 else "partial"
+        logger.info("Managed identities toggled: %d succeeded, %d failed", toggled, failed)
+
+    except Exception as exc:
+        op["status"] = "failed"
+        op["error"] = str(exc)[:200]
+        logger.exception("Managed identity toggle failed")
+
+    return op
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 11. Rotate storage account keys
+# ──────────────────────────────────────────────────────────────────────
+
+def _rotate_storage_keys(
+    credential: TokenCredential,
+    subscription_id: str,
+    storage_resources: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Rotate access keys on storage accounts to revoke source-tenant access."""
+    op: dict[str, Any] = {
+        "operation": "Rotate Storage Account Keys",
+        "resource_type": "Microsoft.Storage/storageAccounts",
+        "details": [],
+    }
+    rotated = 0
+    failed = 0
+
+    try:
+        from azure.mgmt.storage import StorageManagementClient
+        client = StorageManagementClient(credential, subscription_id)
+
+        for r in storage_resources:
+            rg = r.get("resource_group", "")
+            name = r.get("name", "")
+            try:
+                client.storage_accounts.regenerate_key(
+                    resource_group_name=rg,
+                    account_name=name,
+                    regenerate_key={"key_name": "key1"},
+                )
+                client.storage_accounts.regenerate_key(
+                    resource_group_name=rg,
+                    account_name=name,
+                    regenerate_key={"key_name": "key2"},
+                )
+                rotated += 1
+                op["details"].append({
+                    "action": f"Rotated keys for '{name}'",
+                    "status": "succeeded",
+                })
+            except Exception as exc:
+                failed += 1
+                op["details"].append({
+                    "action": f"Rotate keys for '{name}'",
+                    "status": "failed",
+                    "error": str(exc)[:200],
+                })
+
+        op["details"].insert(0, {
+            "action": "Summary",
+            "accounts_rotated": rotated,
+            "accounts_failed": failed,
+        })
+        op["status"] = "succeeded" if failed == 0 else "partial"
+        logger.info("Storage keys rotated: %d succeeded, %d failed", rotated, failed)
+
+    except Exception as exc:
+        op["status"] = "failed"
+        op["error"] = str(exc)[:200]
+        logger.exception("Storage key rotation failed")
+
+    return op
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────
+
+def _find_sami_resources(
+    resources: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Find resources with system-assigned managed identities."""
+    result: list[dict[str, Any]] = []
+    for r in resources:
+        identity = r.get("identity", {})
+        if isinstance(identity, dict) and identity.get("type", "").lower() in (
+            "systemassigned", "systemassigned,userassigned",
+        ):
+            result.append(r)
+        # Also check children
+        for child in r.get("children", []):
+            child_id = child.get("identity", {})
+            if isinstance(child_id, dict) and child_id.get("type", "").lower() in (
+                "systemassigned", "systemassigned,userassigned",
+            ):
+                result.append(child)
+    return result
+
+
+# Common API versions for the generic ARM PATCH approach
+_API_VERSIONS: dict[str, str] = {
+    "microsoft.compute/virtualmachines": "2024-03-01",
+    "microsoft.web/sites": "2023-12-01",
+    "microsoft.containerservice/managedclusters": "2024-01-01",
+    "microsoft.logic/workflows": "2019-05-01",
+    "microsoft.datafactory/factories": "2018-06-01",
+    "microsoft.sql/servers": "2023-05-01-preview",
+    "microsoft.keyvault/vaults": "2023-07-01",
+    "microsoft.automation/automationaccounts": "2023-11-01",
+}
+
+
+def _get_api_version(resource_type: str) -> str:
+    """Return a suitable API version for the ARM PATCH call."""
+    return _API_VERSIONS.get(resource_type.lower(), "2023-07-01")
+
 
 def _filter_by_type(
     resources: list[dict[str, Any]],

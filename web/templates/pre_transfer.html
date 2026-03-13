@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Pre-Transfer Export – Tenova{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+    {% if scan_task_id %}
+    <li class="breadcrumb-item"><a href="{{ url_for('main.scan_status', task_id=scan_task_id) }}">Scan</a></li>
+    {% endif %}
+    <li class="breadcrumb-item active">Pre-Transfer Export</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3><i class="bi bi-box-arrow-down me-2"></i>Pre-Transfer Export</h3>
+  <span class="text-body-secondary">Subscription: <code>{{ subscription_id }}</code></span>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <p class="mb-2">Exporting all pre-transfer artifacts (RBAC, policies, locks, Key Vault access policies, managed identities)…</p>
+    <div class="progress mb-3" style="height: 24px;">
+      <div id="progress-bar" class="progress-bar bg-info progress-bar-striped progress-bar-animated"
+           role="progressbar" style="width: 0%;">Initialising…</div>
+    </div>
+
+    <div id="steps-container"></div>
+
+    <div id="bundle-download" class="d-none mt-4">
+      <div class="alert alert-success d-flex align-items-center">
+        <i class="bi bi-check-circle-fill me-2 fs-4"></i>
+        <div>
+          <strong>Export complete!</strong> Download your migration bundle and keep it safe — you'll need it after the tenant transfer.
+        </div>
+      </div>
+      <a id="download-btn" href="{{ url_for('main.download_bundle', task_id=task_id) }}"
+         class="btn btn-primary btn-lg">
+        <i class="bi bi-download me-2"></i>Download Migration Bundle (.zip)
+      </a>
+      <a href="https://portal.azure.com/#@/resource/subscriptions/{{ subscription_id }}/changeDirectory"
+         target="_blank" rel="noopener"
+         class="btn btn-outline-warning btn-lg ms-2">
+        <i class="bi bi-arrow-right-circle me-2"></i>Proceed to Transfer (Azure Portal)
+      </a>
+    </div>
+
+    <div id="error-container" class="d-none mt-4">
+      <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <span id="error-message"></span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const taskId = {{ task_id | tojson }};
+  const pollUrl = `/api/pre-transfer/${taskId}`;
+  const bar = document.getElementById('progress-bar');
+  const stepsEl = document.getElementById('steps-container');
+  const bundleEl = document.getElementById('bundle-download');
+  const errorEl = document.getElementById('error-container');
+
+  function renderSteps(steps) {
+    let html = '<table class="table table-sm table-hover">';
+    html += '<thead><tr><th>Step</th><th>Status</th><th>Items</th></tr></thead><tbody>';
+    steps.forEach(s => {
+      const icon = s.status === 'succeeded' ? '✅' : s.status === 'failed' ? '❌' : '⏳';
+      html += `<tr><td>${icon} ${s.name}</td>`;
+      html += `<td><span class="badge bg-${s.status === 'succeeded' ? 'success' : s.status === 'failed' ? 'danger' : 'secondary'}">${s.status}</span></td>`;
+      html += `<td>${s.count !== undefined ? s.count : '—'}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    stepsEl.innerHTML = html;
+  }
+
+  function poll() {
+    fetch(pollUrl)
+      .then(r => r.json())
+      .then(data => {
+        if (data.steps) renderSteps(data.steps);
+
+        const summary = data.summary || {};
+        const total = summary.total || 1;
+        const done = (summary.succeeded || 0) + (summary.failed || 0);
+        const pct = Math.round((done / total) * 100);
+
+        if (data.status === 'completed') {
+          bar.style.width = '100%';
+          bar.textContent = '100% — Complete';
+          bar.classList.remove('progress-bar-animated');
+          bar.classList.replace('bg-info', 'bg-success');
+          bundleEl.classList.remove('d-none');
+          return; // stop polling
+        }
+        if (data.status === 'failed') {
+          bar.style.width = '100%';
+          bar.textContent = 'Failed';
+          bar.classList.remove('progress-bar-animated');
+          bar.classList.replace('bg-info', 'bg-danger');
+          errorEl.classList.remove('d-none');
+          document.getElementById('error-message').textContent = data.error || 'An error occurred.';
+          return;
+        }
+
+        bar.style.width = pct + '%';
+        bar.textContent = `${pct}% — Exporting…`;
+        setTimeout(poll, 2000);
+      })
+      .catch(() => setTimeout(poll, 5000));
+  }
+
+  poll();
+})();
+</script>
+{% endblock %}
