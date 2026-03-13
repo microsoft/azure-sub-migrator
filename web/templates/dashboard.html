@@ -127,180 +127,190 @@
 <!-- ═══════════════════════════════════════ WORKFLOW TAB ════════════ -->
 <div class="tab-pane fade" id="workflow-pane" role="tabpanel" tabindex="0">
 
-{% if has_bundle %}
-<div class="alert alert-info d-flex align-items-center mb-4">
-  <i class="bi bi-box-seam-fill me-2 fs-5"></i>
-  <div>
-    <strong>Bundle loaded</strong> from
-    <code>{{ bundle_manifest.get('subscription_id', '')[:8] }}…</code>
-    (created {{ bundle_manifest.get('created_at', '')[:19] }}).
-    {{ bundle_manifest.get('files', [])|length }} artifacts ready for restoration.
+<!-- Subscription selector -->
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="row align-items-end g-3">
+      <div class="col-md-8">
+        <label for="wf-sub-select" class="form-label fw-semibold">
+          <i class="bi bi-collection me-1"></i>Select a subscription to migrate
+        </label>
+        <select id="wf-sub-select" class="form-select">
+          <option value="">— Choose a subscription —</option>
+          {% for sub in subscriptions %}
+          <option value="{{ sub.subscription_id }}"
+                  {% if subscription_id == sub.subscription_id %}selected{% endif %}>
+            {{ sub.display_name }} ({{ sub.subscription_id[:8] }}…)
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4 text-end">
+        <span id="wf-tenant-badge" class="badge bg-secondary">
+          <i class="bi bi-building me-1"></i>Tenant: {{ tenant_id[:8] if tenant_id else '?' }}…
+        </span>
+      </div>
+    </div>
   </div>
 </div>
-{% endif %}
 
-<!-- Phase 1: Pre-Transfer -->
+<!-- ── PHASE 1: PRE-TRANSFER ──────────────────────────────────────── -->
 <div class="card shadow-sm mb-4 border-danger phase-card">
   <div class="card-header bg-danger bg-opacity-10 fw-semibold">
     <i class="bi bi-1-circle me-2"></i>Phase 1: Pre-Transfer
     <span class="badge bg-danger float-end">Before transfer</span>
   </div>
   <div class="card-body">
-    <div class="list-group list-group-flush">
 
-      <div class="list-group-item d-flex align-items-center gap-3 step-pending" id="step-scan">
-        <span class="step-icon"><i class="bi bi-search"></i></span>
-        <div class="flex-grow-1">
-          <strong>Scan subscription</strong>
-          <div class="text-body-secondary small">Enumerate all resources and identify tenant-bound dependencies.</div>
+    <!-- Step 1: Scan -->
+    <div class="border rounded p-3 mb-3" id="wf-step-scan">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-search text-primary me-2"></i>
+          <strong>Step 1: Scan Subscription</strong>
+          <div class="text-body-secondary small mt-1">Enumerate all resources and identify tenant-bound dependencies.</div>
         </div>
-        <button class="btn btn-outline-primary btn-sm" onclick="document.getElementById('subs-tab').click();">
-          <i class="bi bi-play-fill me-1"></i>Go to Subscriptions
+        <button class="btn btn-primary btn-sm" id="wf-scan-btn" disabled>
+          <i class="bi bi-play-fill me-1"></i>Run Scan
         </button>
       </div>
-
-      <div class="list-group-item d-flex align-items-center gap-3 step-pending" id="step-readiness">
-        <span class="step-icon"><i class="bi bi-shield-check"></i></span>
-        <div class="flex-grow-1">
-          <strong>Readiness check</strong>
-          <div class="text-body-secondary small">Detect blockers (AKS, Databricks, SQL with Entra auth, etc.) before transfer.</div>
+      <div id="wf-scan-progress" class="mt-3 d-none">
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
         </div>
-        <span class="badge bg-secondary">After scan</span>
+        <small class="text-body-secondary">Scanning resources…</small>
       </div>
-
-      <div class="list-group-item d-flex align-items-center gap-3 step-pending" id="step-export">
-        <span class="step-icon"><i class="bi bi-box-arrow-down"></i></span>
-        <div class="flex-grow-1">
-          <strong>Export pre-transfer artifacts</strong>
-          <div class="text-body-secondary small">
-            Automated export of RBAC assignments, custom roles, policies, locks, Key Vault access policies, and managed identities.
-          </div>
-        </div>
-        <span class="badge bg-secondary">After scan</span>
-      </div>
-
-      <div class="list-group-item d-flex align-items-center gap-3 step-pending" id="step-bundle">
-        <span class="step-icon"><i class="bi bi-file-earmark-zip"></i></span>
-        <div class="flex-grow-1">
-          <strong>Download migration bundle</strong>
-          <div class="text-body-secondary small">Save the .zip bundle to your machine — you'll upload it after the transfer.</div>
-        </div>
-        <span class="badge bg-secondary">After export</span>
-      </div>
-
+      <div id="wf-scan-result" class="mt-3 d-none"></div>
     </div>
+
+    <!-- Step 2: Readiness Check -->
+    <div class="border rounded p-3 mb-3 opacity-50" id="wf-step-readiness">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-shield-check text-warning me-2"></i>
+          <strong>Step 2: Readiness Check</strong>
+          <div class="text-body-secondary small mt-1">Detect blockers (AKS, Databricks, SQL with Entra auth, etc.).</div>
+        </div>
+        <button class="btn btn-warning btn-sm" id="wf-readiness-btn" disabled>
+          <i class="bi bi-clipboard-check me-1"></i>Run Check
+        </button>
+      </div>
+      <div id="wf-readiness-progress" class="mt-3 d-none">
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 100%"></div>
+        </div>
+        <small class="text-body-secondary">Checking readiness…</small>
+      </div>
+      <div id="wf-readiness-result" class="mt-3 d-none"></div>
+    </div>
+
+    <!-- Step 3: Pre-Transfer Export -->
+    <div class="border rounded p-3 mb-3 opacity-50" id="wf-step-export">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-box-arrow-down text-info me-2"></i>
+          <strong>Step 3: Export Pre-Transfer Artifacts</strong>
+          <div class="text-body-secondary small mt-1">Automated export of RBAC, policies, locks, Key Vault access policies, managed identities.</div>
+        </div>
+        <button class="btn btn-info btn-sm" id="wf-export-btn" disabled>
+          <i class="bi bi-box-arrow-down me-1"></i>Run Export
+        </button>
+      </div>
+      <div id="wf-export-progress" class="mt-3 d-none">
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width: 100%"></div>
+        </div>
+        <small class="text-body-secondary">Exporting artifacts…</small>
+      </div>
+      <div id="wf-export-result" class="mt-3 d-none"></div>
+    </div>
+
+    <!-- Step 4: Download Bundle -->
+    <div class="border rounded p-3 opacity-50" id="wf-step-bundle">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-file-earmark-zip text-success me-2"></i>
+          <strong>Step 4: Download Migration Bundle</strong>
+          <div class="text-body-secondary small mt-1">Save the .zip bundle — you'll upload it after the transfer.</div>
+        </div>
+        <a class="btn btn-success btn-sm disabled" id="wf-download-btn" href="#">
+          <i class="bi bi-download me-1"></i>Download Bundle
+        </a>
+      </div>
+    </div>
+
   </div>
 </div>
 
-<!-- Phase 2: Transfer -->
+<!-- ── PHASE 2: TRANSFER ──────────────────────────────────────────── -->
 <div class="card shadow-sm mb-4 border-primary phase-card">
   <div class="card-header bg-primary bg-opacity-10 fw-semibold">
     <i class="bi bi-2-circle me-2"></i>Phase 2: Transfer Subscription
     <span class="badge bg-primary float-end">Azure Portal</span>
   </div>
   <div class="card-body">
-    <div class="list-group list-group-flush">
-
-      <div class="list-group-item d-flex align-items-center gap-3 step-manual">
-        <span class="step-icon"><i class="bi bi-arrow-right-circle"></i></span>
+    <div class="border rounded p-3">
+      <div class="d-flex align-items-center gap-3">
+        <i class="bi bi-arrow-right-circle text-primary fs-4"></i>
         <div class="flex-grow-1">
           <strong>Change directory in Azure Portal</strong>
-          <div class="text-body-secondary small">
-            The subscription transfer must be done in the Azure Portal. Click below to open the exact page.
+          <div class="text-body-secondary small mt-1">
+            This must be done in the Portal. The link below opens the exact page.
           </div>
-          {% if subscription_id %}
-          <a href="https://portal.azure.com/#@/resource/subscriptions/{{ subscription_id }}/changeDirectory"
-             target="_blank" rel="noopener" class="btn btn-warning btn-sm mt-2">
+          <a class="btn btn-warning btn-sm mt-2 disabled" id="wf-portal-link"
+             href="#" target="_blank" rel="noopener">
             <i class="bi bi-box-arrow-up-right me-1"></i>Open Change Directory in Portal
           </a>
-          {% else %}
-          <span class="text-body-secondary small fst-italic">Scan a subscription first to enable the Portal link.</span>
-          {% endif %}
         </div>
       </div>
-
-      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
-        <span class="step-icon"><i class="bi bi-clock-history"></i></span>
-        <div class="flex-grow-1">
-          <strong>Wait for propagation</strong>
-          <div class="text-body-secondary small">Directory changes can take several minutes. Sign out and back in after transfer.</div>
-        </div>
-      </div>
-
     </div>
   </div>
 </div>
 
-<!-- Phase 3: Post-Transfer -->
+<!-- ── PHASE 3: POST-TRANSFER ─────────────────────────────────────── -->
 <div class="card shadow-sm mb-4 border-warning phase-card">
   <div class="card-header bg-warning bg-opacity-10 fw-semibold">
     <i class="bi bi-3-circle me-2"></i>Phase 3: Post-Transfer Restoration
     <span class="badge bg-warning text-dark float-end">After transfer</span>
   </div>
   <div class="card-body">
-    <div class="list-group list-group-flush">
-
-      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
-        <span class="step-icon"><i class="bi bi-box-arrow-in-up"></i></span>
-        <div class="flex-grow-1">
-          <strong>Upload migration bundle</strong>
-          <div class="text-body-secondary small">Upload the .zip bundle from Phase 1 to restore all exported artifacts.</div>
-        </div>
-        <a href="{{ url_for('main.upload_bundle_page') }}" class="btn btn-outline-warning btn-sm">
-          <i class="bi bi-upload me-1"></i>Upload Bundle
-        </a>
-      </div>
-
-      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
-        <span class="step-icon"><i class="bi bi-people"></i></span>
-        <div class="flex-grow-1">
-          <strong>Principal mapping</strong>
-          <div class="text-body-secondary small">Map source-tenant users/groups/SPs to their equivalents in the target tenant.</div>
-        </div>
-        <span class="badge bg-secondary">After upload</span>
-      </div>
-
-      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
-        <span class="step-icon"><i class="bi bi-gear"></i></span>
-        <div class="flex-grow-1">
-          <strong>Automated restoration</strong>
-          <div class="text-body-secondary small">
-            Recreate RBAC assignments &amp; custom roles, restore policies &amp; definitions,
-            restore locks, update Key Vault access, toggle managed identities, and rotate storage keys.
-          </div>
-        </div>
-        <span class="badge bg-secondary">After mapping</span>
-      </div>
-
+    <div class="border rounded p-3 mb-3">
+      <i class="bi bi-box-arrow-in-up text-warning me-2"></i>
+      <strong>Upload migration bundle</strong>
+      <span class="text-body-secondary small ms-2">Upload the .zip from Phase 1 to restore artifacts.</span>
+      <a href="{{ url_for('main.upload_bundle_page') }}" class="btn btn-outline-warning btn-sm float-end">
+        <i class="bi bi-upload me-1"></i>Upload Bundle
+      </a>
+    </div>
+    <div class="border rounded p-3 mb-3">
+      <i class="bi bi-people text-secondary me-2"></i>
+      <strong>Principal mapping</strong>
+      <span class="text-body-secondary small ms-2">Map source-tenant principals to target tenant equivalents.</span>
+    </div>
+    <div class="border rounded p-3">
+      <i class="bi bi-gear text-secondary me-2"></i>
+      <strong>Automated restoration</strong>
+      <span class="text-body-secondary small ms-2">RBAC, policies, locks, Key Vault, managed identities, storage keys.</span>
     </div>
   </div>
 </div>
 
-<!-- Phase 4: Validation -->
+<!-- ── PHASE 4: VALIDATION ────────────────────────────────────────── -->
 <div class="card shadow-sm mb-4 border-success phase-card">
   <div class="card-header bg-success bg-opacity-10 fw-semibold">
     <i class="bi bi-4-circle me-2"></i>Phase 4: Validation
     <span class="badge bg-success float-end">Verify</span>
   </div>
   <div class="card-body">
-    <div class="list-group list-group-flush">
-
-      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
-        <span class="step-icon"><i class="bi bi-search"></i></span>
-        <div class="flex-grow-1">
-          <strong>Run follow-up scan</strong>
-          <div class="text-body-secondary small">Scan the subscription in the target tenant to verify all resources are operational.</div>
-        </div>
-      </div>
-
-      <div class="list-group-item d-flex align-items-center gap-3 step-pending">
-        <span class="step-icon"><i class="bi bi-check2-all"></i></span>
-        <div class="flex-grow-1">
-          <strong>Close maintenance window</strong>
-          <div class="text-body-secondary small">Confirm migration is complete and notify stakeholders.</div>
-        </div>
-      </div>
-
+    <div class="border rounded p-3 mb-3">
+      <i class="bi bi-search text-success me-2"></i>
+      <strong>Run follow-up scan</strong>
+      <span class="text-body-secondary small ms-2">Scan in the target tenant to verify resources are operational.</span>
+    </div>
+    <div class="border rounded p-3">
+      <i class="bi bi-check2-all text-success me-2"></i>
+      <strong>Close maintenance window</strong>
+      <span class="text-body-secondary small ms-2">Confirm migration complete, notify stakeholders.</span>
     </div>
   </div>
 </div>
@@ -312,8 +322,242 @@
 
 {% block extra_scripts %}
 <script nonce="{{ csp_nonce }}">
-  $(function () {
-    $('#subsTable').DataTable({ paging: false, info: false });
+$(function () {
+  $('#subsTable').DataTable({ paging: false, info: false });
+
+  // ── Workflow state ──────────────────────────────────────────────
+  var wfState = {
+    subId: null,
+    scanTaskId: null,
+    readinessTaskId: null,
+    exportTaskId: null,
+    csrfToken: '{{ csrf_token() }}'
+  };
+
+  // ── Subscription selector ──────────────────────────────────────
+  var $subSelect = $('#wf-sub-select');
+  var $scanBtn = $('#wf-scan-btn');
+
+  function updateSubSelection() {
+    wfState.subId = $subSelect.val() || null;
+    $scanBtn.prop('disabled', !wfState.subId);
+    // Update portal link
+    if (wfState.subId) {
+      $('#wf-portal-link')
+        .attr('href', 'https://portal.azure.com/#@/resource/subscriptions/' + wfState.subId + '/changeDirectory')
+        .removeClass('disabled');
+    } else {
+      $('#wf-portal-link').attr('href', '#').addClass('disabled');
+    }
+  }
+  $subSelect.on('change', updateSubSelection);
+  updateSubSelection();
+
+  // ── Helpers ─────────────────────────────────────────────────────
+  function apiPost(url, data) {
+    return $.ajax({
+      url: url,
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(data),
+      headers: { 'X-CSRFToken': wfState.csrfToken }
+    });
+  }
+
+  function pollTask(taskId, apiUrl, onComplete, onProgress) {
+    var interval = setInterval(function () {
+      $.getJSON(apiUrl.replace('TASK_ID', taskId), function (d) {
+        if (onProgress) onProgress(d);
+        if (d.status === 'completed' || d.status === 'failed') {
+          clearInterval(interval);
+          onComplete(d);
+        }
+      }).fail(function () {
+        clearInterval(interval);
+        onComplete({ status: 'failed', error: 'Lost connection to server' });
+      });
+    }, 2000);
+  }
+
+  function unlockStep($step) {
+    $step.removeClass('opacity-50');
+    $step.find('button').prop('disabled', false);
+  }
+
+  function markDone($step) {
+    $step.css('border-color', 'var(--bs-success)');
+    $step.find('button').prop('disabled', true).removeClass('btn-primary btn-warning btn-info')
+      .addClass('btn-outline-success').html('<i class="bi bi-check-circle me-1"></i>Done');
+  }
+
+  // ── Step 1: SCAN ───────────────────────────────────────────────
+  $scanBtn.on('click', function () {
+    if (!wfState.subId) return;
+    var $btn = $(this);
+    $btn.prop('disabled', true);
+    $subSelect.prop('disabled', true);
+    $('#wf-scan-progress').removeClass('d-none');
+    $('#wf-scan-result').addClass('d-none').empty();
+
+    apiPost('{{ url_for("main.api_start_scan") }}', { subscription_id: wfState.subId })
+      .done(function (resp) {
+        wfState.scanTaskId = resp.task_id;
+        pollTask(resp.task_id, '{{ url_for("main.api_task_status", task_id="TASK_ID") }}',
+          function onComplete(d) {
+            $('#wf-scan-progress').addClass('d-none');
+            var $r = $('#wf-scan-result').removeClass('d-none');
+            if (d.status === 'failed') {
+              $r.html('<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>' +
+                (d.error || 'Scan failed') + '</div>');
+              $btn.prop('disabled', false);
+              $subSelect.prop('disabled', false);
+              return;
+            }
+            var safe = d.transfer_safe_count || 0;
+            var action = d.requires_action_count || 0;
+            var html = '<div class="alert alert-' + (action > 0 ? 'warning' : 'success') + ' mb-2">' +
+              '<i class="bi bi-check-circle me-2"></i><strong>Scan complete:</strong> ' +
+              safe + ' transfer-safe, ' + action + ' require action.' +
+              '</div>';
+
+            // Show resource summary table
+            if (d.requires_action && d.requires_action.length > 0) {
+              html += '<div class="table-responsive"><table class="table table-sm table-bordered mb-0">' +
+                '<thead><tr><th>Resource</th><th>Type</th><th>Issue</th></tr></thead><tbody>';
+              d.requires_action.forEach(function (r) {
+                html += '<tr><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
+                  '</code></td><td>' + (r.reason || r.issue || '—') + '</td></tr>';
+              });
+              html += '</tbody></table></div>';
+            }
+            $r.html(html);
+            markDone($('#wf-step-scan'));
+            // Unlock readiness + export
+            unlockStep($('#wf-step-readiness'));
+            unlockStep($('#wf-step-export'));
+          }
+        );
+      })
+      .fail(function (xhr) {
+        $('#wf-scan-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#wf-scan-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+        $subSelect.prop('disabled', false);
+      });
   });
+
+  // ── Step 2: READINESS CHECK ────────────────────────────────────
+  $('#wf-readiness-btn').on('click', function () {
+    if (!wfState.subId) return;
+    var $btn = $(this).prop('disabled', true);
+    $('#wf-readiness-progress').removeClass('d-none');
+    $('#wf-readiness-result').addClass('d-none').empty();
+
+    apiPost('{{ url_for("main.api_start_readiness") }}', { subscription_id: wfState.subId })
+      .done(function (resp) {
+        wfState.readinessTaskId = resp.task_id;
+        pollTask(resp.task_id, '{{ url_for("main.api_task_status", task_id="TASK_ID") }}',
+          function onComplete(d) {
+            $('#wf-readiness-progress').addClass('d-none');
+            var $r = $('#wf-readiness-result').removeClass('d-none');
+            if (d.status === 'failed') {
+              $r.html('<div class="alert alert-danger mb-0">' + (d.error || 'Check failed') + '</div>');
+              $btn.prop('disabled', false);
+              return;
+            }
+            var rd = d.readiness || {};
+            var blockers = rd.blockers || [];
+            var warnings = rd.warnings || [];
+            var info = rd.info || [];
+            var alertType = blockers.length > 0 ? 'danger' : (warnings.length > 0 ? 'warning' : 'success');
+            var html = '<div class="alert alert-' + alertType + ' mb-2">' +
+              '<i class="bi bi-shield-check me-2"></i><strong>Readiness:</strong> ' +
+              blockers.length + ' blocker(s), ' + warnings.length + ' warning(s), ' +
+              info.length + ' info.' + '</div>';
+
+            if (blockers.length > 0) {
+              html += '<div class="mb-2"><strong class="text-danger">Blockers:</strong><ul class="mb-0">';
+              blockers.forEach(function (b) { html += '<li>' + (b.message || b) + '</li>'; });
+              html += '</ul></div>';
+            }
+            if (warnings.length > 0) {
+              html += '<div><strong class="text-warning">Warnings:</strong><ul class="mb-0">';
+              warnings.forEach(function (w) { html += '<li>' + (w.message || w) + '</li>'; });
+              html += '</ul></div>';
+            }
+            $r.html(html);
+            markDone($('#wf-step-readiness'));
+          }
+        );
+      })
+      .fail(function (xhr) {
+        $('#wf-readiness-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#wf-readiness-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+      });
+  });
+
+  // ── Step 3: PRE-TRANSFER EXPORT ────────────────────────────────
+  $('#wf-export-btn').on('click', function () {
+    if (!wfState.scanTaskId) {
+      alert('Please run a scan first.');
+      return;
+    }
+    var $btn = $(this).prop('disabled', true);
+    $('#wf-export-progress').removeClass('d-none');
+    $('#wf-export-result').addClass('d-none').empty();
+
+    apiPost('{{ url_for("main.api_start_pre_transfer") }}', { scan_task_id: wfState.scanTaskId })
+      .done(function (resp) {
+        wfState.exportTaskId = resp.task_id;
+        pollTask(resp.task_id, '{{ url_for("main.api_pre_transfer_status", task_id="TASK_ID") }}',
+          function onComplete(d) {
+            $('#wf-export-progress').addClass('d-none');
+            var $r = $('#wf-export-result').removeClass('d-none');
+            if (d.status === 'failed') {
+              $r.html('<div class="alert alert-danger mb-0">' + (d.error || 'Export failed') + '</div>');
+              $btn.prop('disabled', false);
+              return;
+            }
+            var steps = d.steps || [];
+            var summary = d.summary || {};
+            var html = '<div class="alert alert-' +
+              (d.overall_status === 'succeeded' ? 'success' : 'warning') +
+              ' mb-2"><i class="bi bi-box-seam me-2"></i><strong>Export complete:</strong> ' +
+              (summary.succeeded || 0) + '/' + (summary.total || 0) + ' steps succeeded.</div>';
+
+            html += '<table class="table table-sm table-bordered mb-0">' +
+              '<thead><tr><th>Step</th><th>Status</th><th>Items</th></tr></thead><tbody>';
+            steps.forEach(function (s) {
+              var badge = s.status === 'succeeded' ? 'success' : 'danger';
+              html += '<tr><td>' + s.name + '</td><td><span class="badge bg-' + badge + '">' +
+                s.status + '</span></td><td>' + (s.count != null ? s.count : '—') + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            $r.html(html);
+            markDone($('#wf-step-export'));
+
+            // Unlock download
+            var $dl = $('#wf-step-bundle').removeClass('opacity-50');
+            var downloadUrl = '{{ url_for("main.download_bundle", task_id="TASK_ID") }}'
+              .replace('TASK_ID', wfState.exportTaskId);
+            $('#wf-download-btn').attr('href', downloadUrl).removeClass('disabled');
+          }
+        );
+      })
+      .fail(function (xhr) {
+        $('#wf-export-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#wf-export-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+      });
+  });
+
+});
 </script>
 {% endblock %}

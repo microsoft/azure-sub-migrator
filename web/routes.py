@@ -174,6 +174,65 @@ def api_task_status(task_id: str):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# AJAX API: start tasks (JSON in → JSON out, no redirects)
+# Used by the inline workflow on the dashboard.
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/api/start-scan", methods=["POST"])
+@login_required
+@limiter.limit("10 per minute")
+def api_start_scan():
+    """Start a scan and return task_id as JSON."""
+    data = request.get_json(silent=True) or {}
+    subscription_id = (data.get("subscription_id") or "").strip()
+    if not subscription_id or not _UUID_RE.match(subscription_id):
+        return jsonify({"error": "Valid subscription_id is required"}), 400
+
+    token = get_access_token()
+    task_id = start_scan(token, subscription_id, owner_id=_get_owner_id())
+    session["last_scan_sub"] = subscription_id
+    return jsonify({"task_id": task_id})
+
+
+@main_bp.route("/api/start-readiness", methods=["POST"])
+@login_required
+@limiter.limit("10 per minute")
+def api_start_readiness():
+    """Start a readiness check and return task_id as JSON."""
+    data = request.get_json(silent=True) or {}
+    subscription_id = (data.get("subscription_id") or "").strip()
+    if not subscription_id or not _UUID_RE.match(subscription_id):
+        return jsonify({"error": "Valid subscription_id is required"}), 400
+
+    token = get_access_token()
+    task_id = start_readiness_check(token, subscription_id, owner_id=_get_owner_id())
+    return jsonify({"task_id": task_id})
+
+
+@main_bp.route("/api/start-pre-transfer", methods=["POST"])
+@login_required
+@limiter.limit("5 per minute")
+def api_start_pre_transfer():
+    """Start a pre-transfer export using a completed scan task."""
+    data = request.get_json(silent=True) or {}
+    scan_task_id = (data.get("scan_task_id") or "").strip()
+    if not scan_task_id:
+        return jsonify({"error": "scan_task_id is required"}), 400
+
+    scan_task = get_task(scan_task_id, owner_id=_get_owner_id())
+    if scan_task is None or scan_task.result is None:
+        return jsonify({"error": "No completed scan found"}), 404
+
+    token = get_access_token()
+    subscription_id = session.get("last_scan_sub", "")
+    task_id = start_pre_transfer(
+        token, subscription_id, scan_task.result, owner_id=_get_owner_id(),
+    )
+    session["last_pre_transfer_task"] = task_id
+    return jsonify({"task_id": task_id})
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Migration Plan (download JSON)
 # ──────────────────────────────────────────────────────────────────────
 
