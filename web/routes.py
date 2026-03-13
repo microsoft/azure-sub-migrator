@@ -233,6 +233,74 @@ def api_start_pre_transfer():
 
 
 # ──────────────────────────────────────────────────────────────────────
+# AJAX API: Post-Transfer (Phase 3)
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/api/get-principal-mapping", methods=["POST"])
+@login_required
+@limiter.limit("10 per minute")
+def api_get_principal_mapping():
+    """Extract principals from the uploaded bundle and suggest mappings."""
+    bundle_artifacts = session.get("bundle_artifacts", {})
+    if not bundle_artifacts:
+        return jsonify({"error": "No bundle uploaded. Please upload a migration bundle first."}), 400
+
+    rbac_assignments = bundle_artifacts.get("rbac_assignments", [])
+    if not rbac_assignments:
+        return jsonify({"principals": [], "has_rbac": False})
+
+    from tenova.principal_map import extract_principals, suggest_mappings
+
+    rbac_export = {"role_assignments": rbac_assignments}
+    principals = extract_principals(rbac_export)
+
+    # Try to auto-suggest mappings using the current token
+    # (after transfer the user is in the target tenant)
+    try:
+        target_token = get_access_token()
+        if target_token:
+            suggest_mappings(principals, target_token)
+    except Exception:
+        pass  # suggestions are best-effort
+
+    return jsonify({"principals": principals, "has_rbac": True})
+
+
+@main_bp.route("/api/start-post-transfer", methods=["POST"])
+@login_required
+@limiter.limit("5 per minute")
+def api_start_post_transfer():
+    """Accept principal mapping and start post-transfer restoration."""
+    bundle_artifacts = session.get("bundle_artifacts", {})
+    if not bundle_artifacts:
+        return jsonify({"error": "No bundle uploaded."}), 400
+
+    data = request.get_json(silent=True) or {}
+    mapping = data.get("mapping", {})
+
+    # Build inputs from bundle artifacts
+    scan_data = bundle_artifacts.get("scan_results", {})
+    rbac_assignments = bundle_artifacts.get("rbac_assignments", [])
+    rbac_export = {"role_assignments": rbac_assignments} if rbac_assignments else None
+
+    token = get_access_token()
+    subscription_id = session.get("last_scan_sub", "")
+
+    session["principal_mapping"] = mapping
+
+    task_id = start_post_transfer(
+        access_token=token,
+        subscription_id=subscription_id,
+        scan_data=scan_data,
+        rbac_export=rbac_export,
+        principal_mapping=mapping,
+        owner_id=_get_owner_id(),
+    )
+
+    return jsonify({"task_id": task_id})
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Migration Plan (download JSON)
 # ──────────────────────────────────────────────────────────────────────
 

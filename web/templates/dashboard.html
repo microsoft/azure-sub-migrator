@@ -274,24 +274,69 @@
     <span class="badge bg-warning text-dark float-end">After transfer</span>
   </div>
   <div class="card-body">
-    <div class="border rounded p-3 mb-3">
-      <i class="bi bi-box-arrow-in-up text-warning me-2"></i>
-      <strong>Upload migration bundle</strong>
-      <span class="text-body-secondary small ms-2">Upload the .zip from Phase 1 to restore artifacts.</span>
-      <a href="{{ url_for('main.upload_bundle_page') }}" class="btn btn-outline-warning btn-sm float-end">
-        <i class="bi bi-upload me-1"></i>Upload Bundle
-      </a>
+
+    <!-- Step 5: Upload Bundle -->
+    <div class="border rounded p-3 mb-3" id="wf-step-upload">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-box-arrow-in-up text-warning me-2"></i>
+          <strong>Step 5: Upload Migration Bundle</strong>
+          <div class="text-body-secondary small mt-1">Upload the .zip from Phase 1 to restore artifacts.</div>
+        </div>
+        {% if has_bundle %}
+        <span class="badge bg-success fs-6">
+          <i class="bi bi-check-circle me-1"></i>{{ bundle_manifest.artifacts | length if bundle_manifest and bundle_manifest.artifacts else (session.get('bundle_artifacts', {}) | length) }} artifacts loaded
+        </span>
+        {% else %}
+        <a href="{{ url_for('main.upload_bundle_page') }}" class="btn btn-outline-warning btn-sm">
+          <i class="bi bi-upload me-1"></i>Upload Bundle
+        </a>
+        {% endif %}
+      </div>
     </div>
-    <div class="border rounded p-3 mb-3">
-      <i class="bi bi-people text-secondary me-2"></i>
-      <strong>Principal mapping</strong>
-      <span class="text-body-secondary small ms-2">Map source-tenant principals to target tenant equivalents.</span>
+
+    <!-- Step 6: Principal Mapping -->
+    <div class="border rounded p-3 mb-3 {{ '' if has_bundle else 'opacity-50' }}" id="wf-step-mapping">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-people text-warning me-2"></i>
+          <strong>Step 6: Principal Mapping</strong>
+          <div class="text-body-secondary small mt-1">Map source-tenant principals to target tenant equivalents.</div>
+        </div>
+        <button class="btn btn-warning btn-sm" id="wf-mapping-btn" {{ '' if has_bundle else 'disabled' }}>
+          <i class="bi bi-people me-1"></i>Load Mapping
+        </button>
+      </div>
+      <div id="wf-mapping-progress" class="mt-3 d-none">
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 100%"></div>
+        </div>
+        <small class="text-body-secondary">Extracting principals &amp; suggesting mappings…</small>
+      </div>
+      <div id="wf-mapping-result" class="mt-3 d-none"></div>
     </div>
-    <div class="border rounded p-3">
-      <i class="bi bi-gear text-secondary me-2"></i>
-      <strong>Automated restoration</strong>
-      <span class="text-body-secondary small ms-2">RBAC, policies, locks, Key Vault, managed identities, storage keys.</span>
+
+    <!-- Step 7: Run Restoration -->
+    <div class="border rounded p-3 opacity-50" id="wf-step-restore">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-gear text-warning me-2"></i>
+          <strong>Step 7: Automated Restoration</strong>
+          <div class="text-body-secondary small mt-1">RBAC, policies, locks, Key Vault, managed identities, storage keys.</div>
+        </div>
+        <button class="btn btn-warning btn-sm" id="wf-restore-btn" disabled>
+          <i class="bi bi-play-fill me-1"></i>Run Restoration
+        </button>
+      </div>
+      <div id="wf-restore-progress" class="mt-3 d-none">
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 100%"></div>
+        </div>
+        <small class="text-body-secondary">Running post-transfer restoration…</small>
+      </div>
+      <div id="wf-restore-result" class="mt-3 d-none"></div>
     </div>
+
   </div>
 </div>
 
@@ -302,16 +347,40 @@
     <span class="badge bg-success float-end">Verify</span>
   </div>
   <div class="card-body">
-    <div class="border rounded p-3 mb-3">
-      <i class="bi bi-search text-success me-2"></i>
-      <strong>Run follow-up scan</strong>
-      <span class="text-body-secondary small ms-2">Scan in the target tenant to verify resources are operational.</span>
+
+    <!-- Step 8: Validation Scan -->
+    <div class="border rounded p-3 mb-3 opacity-50" id="wf-step-validation">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-search text-success me-2"></i>
+          <strong>Step 8: Validation Scan</strong>
+          <div class="text-body-secondary small mt-1">Re-scan in the target tenant to verify resources are operational.</div>
+        </div>
+        <button class="btn btn-success btn-sm" id="wf-validation-btn" disabled>
+          <i class="bi bi-play-fill me-1"></i>Run Validation Scan
+        </button>
+      </div>
+      <div id="wf-validation-progress" class="mt-3 d-none">
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" style="width: 100%"></div>
+        </div>
+        <small class="text-body-secondary">Scanning in target tenant…</small>
+      </div>
+      <div id="wf-validation-result" class="mt-3 d-none"></div>
     </div>
-    <div class="border rounded p-3">
-      <i class="bi bi-check2-all text-success me-2"></i>
-      <strong>Close maintenance window</strong>
-      <span class="text-body-secondary small ms-2">Confirm migration complete, notify stakeholders.</span>
+
+    <!-- Step 9: Close Maintenance Window -->
+    <div class="border rounded p-3 opacity-50" id="wf-step-close">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-check2-all text-success me-2"></i>
+          <strong>Step 9: Migration Complete</strong>
+          <div class="text-body-secondary small mt-1">Confirm migration complete, notify stakeholders, close maintenance window.</div>
+        </div>
+        <span class="badge bg-secondary" id="wf-close-badge">Pending</span>
+      </div>
     </div>
+
   </div>
 </div>
 
@@ -337,6 +406,9 @@ $(function () {
     scanTaskId: null,
     readinessTaskId: null,
     exportTaskId: null,
+    principalMapping: {},
+    restoreTaskId: null,
+    validationTaskId: null,
     csrfToken: '{{ csrf_token() }}'
   };
 
@@ -586,6 +658,215 @@ $(function () {
         $('#wf-export-progress').addClass('d-none');
         var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
         $('#wf-export-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+      });
+  });
+
+  // ── Step 6: PRINCIPAL MAPPING ──────────────────────────────────
+  var wfPrincipals = [];
+
+  $('#wf-mapping-btn').on('click', function () {
+    var $btn = $(this).prop('disabled', true);
+    $('#wf-mapping-progress').removeClass('d-none');
+    $('#wf-mapping-result').addClass('d-none').empty();
+
+    apiPost('{{ url_for("main.api_get_principal_mapping") }}', {})
+      .done(function (resp) {
+        $('#wf-mapping-progress').addClass('d-none');
+        var $r = $('#wf-mapping-result').removeClass('d-none');
+
+        if (!resp.has_rbac) {
+          $r.html('<div class="alert alert-info mb-0">' +
+            '<i class="bi bi-info-circle me-1"></i>No RBAC assignments found in bundle. ' +
+            'You can skip mapping and proceed to restoration.</div>');
+          markDone($('#wf-step-mapping'));
+          unlockStep($('#wf-step-restore'));
+          return;
+        }
+
+        wfPrincipals = resp.principals || [];
+        if (wfPrincipals.length === 0) {
+          $r.html('<div class="alert alert-info mb-0">' +
+            '<i class="bi bi-info-circle me-1"></i>No principals found in RBAC data. Proceeding without mapping.</div>');
+          markDone($('#wf-step-mapping'));
+          unlockStep($('#wf-step-restore'));
+          return;
+        }
+
+        var html = '<div class="alert alert-info mb-2">' +
+          '<i class="bi bi-people me-1"></i><strong>' + wfPrincipals.length +
+          ' principal(s)</strong> found. Review and confirm target-tenant mappings below.</div>';
+
+        html += '<div class="table-responsive" style="max-height:400px;overflow-y:auto;">' +
+          '<table class="table table-sm table-bordered mb-2">' +
+          '<thead class="sticky-top"><tr><th>Source ID</th><th>Type</th><th>Display Name</th>' +
+          '<th>Target ID (new tenant)</th></tr></thead><tbody>';
+
+        wfPrincipals.forEach(function (p, i) {
+          var suggested = p.suggested_id || '';
+          var suggestedLabel = p.suggested_name || '';
+          html += '<tr>' +
+            '<td><code class="small">' + (p.principal_id || '').substring(0, 12) + '…</code></td>' +
+            '<td><span class="badge bg-secondary">' + (p.object_type || p.principal_type || 'Unknown') + '</span></td>' +
+            '<td>' + (p.display_name || '(unknown)') +
+              (p.upn ? '<br><small class="text-body-secondary">' + p.upn + '</small>' : '') + '</td>' +
+            '<td><input type="text" class="form-control form-control-sm wf-mapping-input" ' +
+              'data-old-id="' + (p.principal_id || '') + '" ' +
+              'value="' + suggested + '" ' +
+              'placeholder="' + (suggestedLabel ? suggestedLabel : 'Enter target principal ID') + '">' +
+            '</td></tr>';
+        });
+
+        html += '</tbody></table></div>' +
+          '<button class="btn btn-warning btn-sm" id="wf-confirm-mapping-btn">' +
+          '<i class="bi bi-check-lg me-1"></i>Confirm Mapping</button>';
+
+        $r.html(html);
+
+        // Confirm button handler
+        $('#wf-confirm-mapping-btn').on('click', function () {
+          wfState.principalMapping = {};
+          $('.wf-mapping-input').each(function () {
+            var oldId = $(this).data('old-id');
+            var newId = $(this).val().trim();
+            if (oldId && newId) {
+              wfState.principalMapping[oldId] = newId;
+            }
+          });
+          markDone($('#wf-step-mapping'));
+          unlockStep($('#wf-step-restore'));
+        });
+      })
+      .fail(function (xhr) {
+        $('#wf-mapping-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Failed to load mapping';
+        $('#wf-mapping-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+      });
+  });
+
+  // ── Step 7: RUN RESTORATION ────────────────────────────────────
+  $('#wf-restore-btn').on('click', function () {
+    var $btn = $(this).prop('disabled', true);
+    $('#wf-restore-progress').removeClass('d-none');
+    $('#wf-restore-result').addClass('d-none').empty();
+
+    var mapping = wfState.principalMapping || {};
+
+    apiPost('{{ url_for("main.api_start_post_transfer") }}', { mapping: mapping })
+      .done(function (resp) {
+        wfState.restoreTaskId = resp.task_id;
+        pollTask(resp.task_id, '{{ url_for("main.api_post_transfer_status", task_id="TASK_ID") }}',
+          function onComplete(d) {
+            $('#wf-restore-progress').addClass('d-none');
+            var $r = $('#wf-restore-result').removeClass('d-none');
+            if (d.status === 'failed') {
+              $r.html('<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>' +
+                (d.error || 'Restoration failed') + '</div>');
+              $btn.prop('disabled', false);
+              return;
+            }
+            var result = d.result || {};
+            var ops = result.operations || [];
+            var summary = result.summary || {};
+            var alertType = (summary.failed || 0) > 0 ? 'warning' : 'success';
+            var html = '<div class="alert alert-' + alertType + ' mb-2">' +
+              '<i class="bi bi-gear me-2"></i><strong>Restoration complete:</strong> ' +
+              (summary.succeeded || 0) + '/' + (summary.total || 0) + ' operations succeeded';
+            if (summary.skipped) html += ', ' + summary.skipped + ' skipped';
+            if (summary.failed) html += ', ' + summary.failed + ' failed';
+            html += '.</div>';
+
+            if (ops.length > 0) {
+              html += '<table class="table table-sm table-bordered mb-0">' +
+                '<thead><tr><th>Operation</th><th>Status</th><th>Details</th></tr></thead><tbody>';
+              ops.forEach(function (op) {
+                var badge = op.status === 'succeeded' ? 'success'
+                  : op.status === 'skipped' ? 'secondary' : 'danger';
+                html += '<tr><td>' + (op.name || op.operation || '') + '</td>' +
+                  '<td><span class="badge bg-' + badge + '">' + (op.status || '') + '</span></td>' +
+                  '<td class="small">' + (op.message || op.detail || '—') + '</td></tr>';
+              });
+              html += '</tbody></table>';
+            }
+            $r.html(html);
+            markDone($('#wf-step-restore'));
+            // Unlock Phase 4
+            unlockStep($('#wf-step-validation'));
+          }
+        );
+      })
+      .fail(function (xhr) {
+        $('#wf-restore-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#wf-restore-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+      });
+  });
+
+  // ── Step 8: VALIDATION SCAN ────────────────────────────────────
+  $('#wf-validation-btn').on('click', function () {
+    if (!wfState.subId) {
+      alert('No subscription selected.');
+      return;
+    }
+    var $btn = $(this).prop('disabled', true);
+    $('#wf-validation-progress').removeClass('d-none');
+    $('#wf-validation-result').addClass('d-none').empty();
+
+    apiPost('{{ url_for("main.api_start_scan") }}', { subscription_id: wfState.subId })
+      .done(function (resp) {
+        wfState.validationTaskId = resp.task_id;
+        pollTask(resp.task_id, '{{ url_for("main.api_task_status", task_id="TASK_ID") }}',
+          function onComplete(d) {
+            $('#wf-validation-progress').addClass('d-none');
+            var $r = $('#wf-validation-result').removeClass('d-none');
+            if (d.status === 'failed') {
+              $r.html('<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>' +
+                (d.error || 'Validation scan failed') + '</div>');
+              $btn.prop('disabled', false);
+              return;
+            }
+            var actionList = d.requires_action || [];
+            var childCount = 0;
+            actionList.forEach(function (r) { childCount += (r.children || []).length; });
+            var actionCount = actionList.length + childCount;
+            var safe = d.transfer_safe_count || 0;
+            var alertType = actionCount > 0 ? 'warning' : 'success';
+            var icon = actionCount === 0 ? 'bi-check-circle' : 'bi-exclamation-triangle';
+            var html = '<div class="alert alert-' + alertType + ' mb-2">' +
+              '<i class="bi ' + icon + ' me-2"></i><strong>Validation scan:</strong> ' +
+              safe + ' healthy, ' + actionCount + ' still require attention.</div>';
+
+            if (actionCount === 0) {
+              html += '<div class="alert alert-success mb-0">' +
+                '<i class="bi bi-trophy me-2"></i><strong>All clear!</strong> ' +
+                'All resources are operational in the target tenant. Migration is complete.</div>';
+            } else {
+              html += '<div class="table-responsive" style="max-height:300px;overflow-y:auto;"><table class="table table-sm table-bordered mb-0">' +
+                '<thead class="sticky-top"><tr><th>Resource</th><th>Type</th><th>Action</th></tr></thead><tbody>';
+              actionList.forEach(function (r) {
+                html += '<tr><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
+                  '</code></td><td class="small">' + (r.pre_action || r.post_action || '—') + '</td></tr>';
+              });
+              html += '</tbody></table></div>';
+            }
+            $r.html(html);
+            markDone($('#wf-step-validation'));
+            // Mark completion
+            $('#wf-step-close').removeClass('opacity-50');
+            $('#wf-close-badge').removeClass('bg-secondary').addClass('bg-success')
+              .html('<i class="bi bi-check-circle me-1"></i>Complete');
+          }
+        );
+      })
+      .fail(function (xhr) {
+        $('#wf-validation-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#wf-validation-result').removeClass('d-none')
           .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
         $btn.prop('disabled', false);
       });
