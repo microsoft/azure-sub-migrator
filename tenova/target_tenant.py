@@ -41,7 +41,10 @@ def build_target_auth_url(
     since we only need the auth-code leg here.
     """
     if scopes is None:
-        scopes = ["https://management.azure.com/user_impersonation"]
+        scopes = [
+            "https://graph.microsoft.com/Directory.Read.All",
+            "https://graph.microsoft.com/User.Read",
+        ]
 
     scope_str = " ".join(scopes)
     params = (
@@ -77,7 +80,10 @@ def redeem_target_auth_code(
     import msal
 
     if scopes is None:
-        scopes = ["https://management.azure.com/user_impersonation"]
+        scopes = [
+            "https://graph.microsoft.com/Directory.Read.All",
+            "https://graph.microsoft.com/User.Read",
+        ]
 
     authority = f"https://login.microsoftonline.com/{target_tenant_id}"
     app = msal.ConfidentialClientApplication(

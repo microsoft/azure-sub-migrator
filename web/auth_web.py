@@ -286,7 +286,7 @@ def target_tenant_callback():
     )
     if task_id:
         return redirect(url_for("main.principal_mapping", task_id=task_id))
-    return redirect(url_for("main.dashboard"))
+    return redirect(url_for("main.dashboard") + "?tab=workflow")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -351,7 +351,7 @@ def consent_graph_callback():
         session["graph_consented"] = True
         flash("Graph permissions granted — display names will now resolve.", "success")
 
-    return redirect(url_for("main.dashboard"))
+    return redirect(url_for("main.dashboard") + "?tab=workflow")
 
 
 @auth_bp.route("/admin-consent")

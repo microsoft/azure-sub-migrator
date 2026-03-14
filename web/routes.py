@@ -94,6 +94,8 @@ def dashboard():
         subscription_id=subscription_id,
         has_bundle=has_bundle,
         bundle_manifest=bundle_manifest,
+        target_tenant_connected=session.get("target_tenant_connected", False),
+        target_tenant_user=session.get("target_tenant_user", {}),
     )
 
 
@@ -284,13 +286,14 @@ def api_start_pre_transfer():
 def api_get_principal_mapping():
     """Extract principals from the uploaded bundle and auto-map them.
 
-    Uses Microsoft Graph to:
-      1. Batch-resolve source-tenant display names (via ``/$batch``).
-      2. Fetch the full target-tenant directory and auto-match using
-         the Sharegate-style multi-strategy algorithm.
+    Requires two separate authentications:
+      1. **Source tenant** (the user's login) — Graph token resolves
+         source-tenant display names via ``/$batch``.
+      2. **Target tenant** (via /auth/target-tenant) — Graph token
+         fetches the target directory for Sharegate-style auto-matching.
 
-    If no Graph token is available (missing consent), returns
-    ``{"needs_graph_consent": true}`` so the UI can prompt the user.
+    If the target tenant is not connected, returns
+    ``{"needs_target_tenant": true}`` so the UI can prompt.
     """
     bundle_artifacts = session.get("bundle_artifacts", {})
     if not bundle_artifacts:
@@ -299,6 +302,14 @@ def api_get_principal_mapping():
     rbac_assignments = bundle_artifacts.get("rbac_assignments", [])
     if not rbac_assignments:
         return jsonify({"principals": [], "has_rbac": False})
+
+    # Require target tenant connection
+    target_token = session.get("target_access_token", "")
+    if not target_token:
+        return jsonify({
+            "has_rbac": True,
+            "needs_target_tenant": True,
+        })
 
     from tenova.principal_map import (
         extract_principals,
@@ -309,29 +320,15 @@ def api_get_principal_mapping():
     rbac_export = {"role_assignments": rbac_assignments}
     principals = extract_principals(rbac_export)
 
-    # Get a Graph token (required for directory queries)
-    graph_token = get_graph_token()
-    if not graph_token:
-        # No Graph consent yet — tell the UI to redirect for consent
-        return jsonify({
-            "principals": principals,
-            "has_rbac": True,
-            "needs_graph_consent": True,
-            "consent_url": url_for("auth.consent_graph"),
-        })
+    # Phase 1: Batch-resolve source display names using source-tenant Graph token
+    source_graph_token = get_graph_token()
+    if source_graph_token:
+        try:
+            resolve_source_principals(principals, source_graph_token)
+        except Exception:
+            pass  # resolution is best-effort
 
-    # Phase 1: Batch-resolve source-tenant display names
-    try:
-        resolve_source_principals(principals, graph_token)
-    except Exception:
-        pass  # resolution is best-effort
-
-    # Phase 2: Auto-map to target tenant
-    # If a separate target-tenant token exists (post-transfer), use it;
-    # otherwise the user is still in the source tenant (testing / pre-transfer)
-    target_token = session.get("target_access_token", "") or graph_token
-
-    # Optional domain mapping from the request body
+    # Phase 2: Auto-map to target tenant using the target-tenant Graph token
     data = request.get_json(silent=True) or {}
     domain_mapping = data.get("domain_mapping", {})
 

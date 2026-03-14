@@ -37,7 +37,8 @@ class TestBuildTargetAuthUrl:
             redirect_uri="https://localhost/cb",
             state="s",
         )
-        assert "user_impersonation" in url
+        assert "Directory.Read.All" in url
+        assert "User.Read" in url
 
     def test_custom_scopes(self):
         url = build_target_auth_url(
