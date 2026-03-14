@@ -501,6 +501,13 @@ $(function () {
       .addClass('btn-outline-success').html('<i class="bi bi-check-circle me-1"></i>Done');
   }
 
+  function lockStep($step) {
+    // Gray out a completed step so it's visually "past"
+    $step.addClass('opacity-50');
+    $step.find('button, a.btn, select, input').prop('disabled', true);
+    $step.find('a.btn').addClass('disabled');
+  }
+
   // ── Step 1: SCAN ───────────────────────────────────────────────
   $scanBtn.on('click', function () {
     if (!wfState.subId) return;
@@ -562,6 +569,7 @@ $(function () {
             }
             $r.html(html);
             markDone($('#wf-step-scan'));
+            lockStep($('#wf-step-scan'));
             // Unlock readiness + export
             unlockStep($('#wf-step-readiness'));
             unlockStep($('#wf-step-export'));
@@ -630,6 +638,7 @@ $(function () {
         }
         $r.html(html);
         markDone($('#wf-step-readiness'));
+        lockStep($('#wf-step-readiness'));
       })
       .fail(function (xhr) {
         $('#wf-readiness-progress').addClass('d-none');
@@ -679,6 +688,7 @@ $(function () {
             html += '</tbody></table>';
             $r.html(html);
             markDone($('#wf-step-export'));
+            lockStep($('#wf-step-export'));
 
             // Unlock download
             var $dl = $('#wf-step-bundle').removeClass('opacity-50');
@@ -699,8 +709,9 @@ $(function () {
 
   // ── Step 6: CONNECT TO TARGET TENANT ─────────────────────────────
   {% if target_tenant_connected %}
-    // Already connected — mark step as done
+    // Already connected — mark step as done and lock it
     markDone($('#wf-step-target'));
+    lockStep($('#wf-step-target'));
     $('#wf-step-mapping').removeClass('opacity-50');
     $('#wf-mapping-btn').prop('disabled', false);
   {% endif %}
@@ -773,8 +784,13 @@ $(function () {
         // Auto-mapping stats
         var autoMapped = resp.auto_mapped || 0;
         var total = resp.total || wfPrincipals.length;
+        var systemCount = resp.system_count || 0;
+        var miCount = resp.managed_identity_count || 0;
+        var mappableCount = resp.mappable_count || 0;
         var highCount = 0, medCount = 0, unmatchedCount = 0;
+        // Only count mappable principals for auto-match stats
         wfPrincipals.forEach(function (p) {
+          if (p.category === 'system' || p.category === 'managed_identity') return;
           var c = p.suggested_confidence || '';
           if (c === 'high') highCount++;
           else if (c === 'medium' || c === 'low') medCount++;
@@ -785,17 +801,20 @@ $(function () {
           '<i class="bi bi-people me-1"></i><strong>' + total +
           ' principal(s)</strong> found.</div>';
 
-        // Auto-mapping summary cards
+        // Category breakdown cards
         html += '<div class="row text-center mb-3 g-2">' +
-          '<div class="col-4"><div class="border rounded p-2 border-success">' +
+          '<div class="col-3"><div class="border rounded p-2 border-secondary">' +
+            '<div class="fs-4 text-body-secondary fw-bold">' + systemCount + '</div>' +
+            '<small>System (auto-skip)</small></div></div>' +
+          '<div class="col-3"><div class="border rounded p-2 border-secondary">' +
+            '<div class="fs-4 text-body-secondary fw-bold">' + miCount + '</div>' +
+            '<small>Managed Identity (auto-skip)</small></div></div>' +
+          '<div class="col-3"><div class="border rounded p-2 border-success">' +
             '<div class="fs-4 text-success fw-bold">' + highCount + '</div>' +
             '<small>Auto-matched (high)</small></div></div>' +
-          '<div class="col-4"><div class="border rounded p-2 border-warning">' +
-            '<div class="fs-4 text-warning fw-bold">' + medCount + '</div>' +
-            '<small>Suggested (med/low)</small></div></div>' +
-          '<div class="col-4"><div class="border rounded p-2 border-secondary">' +
-            '<div class="fs-4 text-body-secondary fw-bold">' + unmatchedCount + '</div>' +
-            '<small>Unmatched</small></div></div>' +
+          '<div class="col-3"><div class="border rounded p-2 border-warning">' +
+            '<div class="fs-4 text-warning fw-bold">' + (medCount + unmatchedCount) + '</div>' +
+            '<small>Needs Review</small></div></div>' +
           '</div>';
 
         if (highCount > 0) {
@@ -803,26 +822,46 @@ $(function () {
             '<i class="bi bi-check2-all me-1"></i>Accept All High-Confidence (' + highCount + ')</button>';
         }
 
+        // Filter toggle
+        html += '<div class="form-check form-switch mb-2">' +
+          '<input class="form-check-input" type="checkbox" id="wf-show-all-principals" checked>' +
+          '<label class="form-check-label small" for="wf-show-all-principals">' +
+          'Show system &amp; managed identity principals (auto-skipped)</label></div>';
+
         html += '<div class="table-responsive" style="max-height:400px;overflow-y:auto;">' +
           '<table class="table table-sm table-bordered mb-2">' +
-          '<thead class="sticky-top"><tr><th>Source ID</th><th>Type</th><th>Display Name</th>' +
+          '<thead class="sticky-top"><tr><th>Source ID</th><th>Type</th><th>Category</th><th>Display Name</th>' +
           '<th>Target ID (new tenant)</th><th>Match</th></tr></thead><tbody>';
 
         wfPrincipals.forEach(function (p, i) {
+          var category = p.category || 'mappable';
+          var isSkippable = (category === 'system' || category === 'managed_identity');
           var suggested = p.suggested_id || '';
           var suggestedLabel = p.suggested_name || '';
           var confidence = p.suggested_confidence || '';
           var matchReason = p.match_reason || '';
           var confBadge = '';
           var rowClass = '';
-          if (confidence === 'high') {
-            confBadge = '<span class="badge bg-success">high</span>';
-            rowClass = ' class="table-success"';
-          } else if (confidence === 'medium') {
-            confBadge = '<span class="badge bg-warning text-dark">med</span>';
-            rowClass = ' class="table-warning"';
-          } else if (confidence === 'low') {
-            confBadge = '<span class="badge bg-secondary">low</span>';
+          var catBadge = '';
+
+          if (isSkippable) {
+            rowClass = ' class="wf-skippable-row table-secondary text-body-secondary"';
+            catBadge = category === 'system'
+              ? '<span class="badge bg-dark">System</span>'
+              : '<span class="badge bg-info text-dark">Managed ID</span>';
+          } else {
+            catBadge = '<span class="badge bg-primary">Mappable</span>';
+            if (confidence === 'high') {
+              confBadge = '<span class="badge bg-success">high</span>';
+              rowClass = ' class="table-success"';
+            } else if (confidence === 'medium') {
+              confBadge = '<span class="badge bg-warning text-dark">med</span>';
+              rowClass = ' class="table-warning"';
+            } else if (confidence === 'low') {
+              confBadge = '<span class="badge bg-secondary">low</span>';
+            } else {
+              rowClass = '';
+            }
           }
 
           // Display name with UPN/mail underneath
@@ -831,16 +870,24 @@ $(function () {
           if (p.upn) nameHtml += '<br><small class="text-body-secondary">' + p.upn + '</small>';
           else if (p.mail) nameHtml += '<br><small class="text-body-secondary">' + p.mail + '</small>';
 
-          html += '<tr' + rowClass + '>' +
-            '<td><code class="small" style="word-break:break-all">' + (p.principal_id || '') + '</code></td>' +
-            '<td><span class="badge bg-secondary">' + (p.object_type || p.principal_type || 'Unknown') + '</span></td>' +
-            '<td>' + nameHtml + '</td>' +
-            '<td><input type="text" class="form-control form-control-sm wf-mapping-input" ' +
+          // Skippable principals get a read-only "Auto-skip" label instead of input
+          var targetCell = '';
+          if (isSkippable) {
+            targetCell = '<span class="text-body-secondary small fst-italic">Auto-skipped</span>';
+          } else {
+            targetCell = '<input type="text" class="form-control form-control-sm wf-mapping-input" ' +
               'data-old-id="' + (p.principal_id || '') + '" ' +
               'data-confidence="' + confidence + '" ' +
               'value="' + suggested + '" ' +
-              'placeholder="' + (suggestedLabel ? suggestedLabel : 'Enter target principal ID') + '">' +
-            '</td>' +
+              'placeholder="' + (suggestedLabel ? suggestedLabel : 'Enter target principal ID') + '">';
+          }
+
+          html += '<tr' + rowClass + '>' +
+            '<td><code class="small" style="word-break:break-all">' + (p.principal_id || '') + '</code></td>' +
+            '<td><span class="badge bg-secondary">' + (p.object_type || p.principal_type || 'Unknown') + '</span></td>' +
+            '<td>' + catBadge + '</td>' +
+            '<td>' + nameHtml + '</td>' +
+            '<td>' + targetCell + '</td>' +
             '<td class="small">' + confBadge +
               (matchReason ? '<br><small class="text-body-secondary">' + matchReason + '</small>' : '') +
             '</td></tr>';
@@ -851,6 +898,15 @@ $(function () {
           '<i class="bi bi-check-lg me-1"></i>Confirm Mapping</button>';
 
         $r.html(html);
+
+        // Toggle visibility of system/MI rows
+        $('#wf-show-all-principals').on('change', function () {
+          if ($(this).is(':checked')) {
+            $('.wf-skippable-row').show();
+          } else {
+            $('.wf-skippable-row').hide();
+          }
+        });
 
         // Accept All High handler
         $('#wf-accept-all-high').on('click', function () {
@@ -879,11 +935,12 @@ $(function () {
           });
           var mapCount = Object.keys(wfState.principalMapping).length;
           markDone($('#wf-step-mapping'));
+          lockStep($('#wf-step-mapping'));
           unlockStep($('#wf-step-restore'));
           $(this).replaceWith(
             '<div class="alert alert-success py-1 px-2 mb-0 d-inline-block">' +
-            '<i class="bi bi-check-circle me-1"></i>' + mapCount + ' / ' + total +
-            ' principals mapped</div>'
+            '<i class="bi bi-check-circle me-1"></i>' + mapCount + ' / ' + mappableCount +
+            ' mappable principals mapped (' + (systemCount + miCount) + ' auto-skipped)</div>'
           );
         });
       })
@@ -964,6 +1021,7 @@ $(function () {
             }
             $r.html(html);
             markDone($('#wf-step-restore'));
+            lockStep($('#wf-step-restore'));
             // Unlock Phase 4
             unlockStep($('#wf-step-validation'));
           }
@@ -1121,6 +1179,7 @@ $(function () {
               });
 
             markDone($('#wf-step-validation'));
+            lockStep($('#wf-step-validation'));
             // Mark completion
             $('#wf-step-close').removeClass('opacity-50');
             $('#wf-close-badge').removeClass('bg-secondary').addClass('bg-success')

@@ -338,3 +338,81 @@ def _friendly_type(odata_type: str) -> str:
         "#microsoft.graph.application": "Application",
     }
     return mapping.get(odata_type, odata_type or "Unknown")
+
+
+# Well-known 1st-party Microsoft application IDs that exist in every tenant.
+# These service principals are auto-provisioned — they don't need manual mapping.
+_FIRST_PARTY_APP_IDS: frozenset[str] = frozenset({
+    # Azure Resource Manager / Portal
+    "797f4846-ba00-4fd7-ba43-dac1f8f63013",
+    "c44b4083-3bb0-49c1-b47d-974e53cbdf3c",
+    # Microsoft Graph
+    "00000003-0000-0000-c000-000000000000",
+    # AAD / Entra ID
+    "00000002-0000-0000-c000-000000000000",
+    # Azure Key Vault
+    "cfa8b339-82a2-471a-a3c9-0fc0be7a4093",
+    # Azure Storage
+    "e406a681-f3d4-42a8-90b6-c2b029497af7",
+    # Azure Backup
+    "262044b1-e2ce-469f-a196-69ab7ada62d3",
+    # Azure Policy / Insights
+    "0736f41a-0425-4b46-bdb5-1563eff02385",
+    # Azure Site Recovery
+    "b8340c3b-9267-498f-b21a-15d5547fd85e",
+    # Azure Monitor
+    "ca7f3f0b-7d91-482c-8e09-c5d840d0eac5",
+    # Azure SQL
+    "e4ab13ed-33cb-41b4-9be4-e22e2bf028b8",
+    # Log Analytics
+    "ca7f3f0b-7d91-482c-8e09-c5d840d0eac5",
+    # Azure Kubernetes Service
+    "6dae42f8-4368-4678-94ff-3960e28e3630",
+})
+
+
+def classify_principal(principal: dict[str, Any]) -> str:
+    """Classify a principal into a mapping category.
+
+    Returns one of:
+      - ``"system"``   — 1st-party Microsoft service principal (auto-skip)
+      - ``"managed_identity"`` — user/system managed identity (auto-skip)
+      - ``"mappable"`` — user, group, or 3rd-party SP that needs mapping
+
+    The classification is stored on the principal dict as ``category``.
+    """
+    obj_type = (
+        principal.get("object_type")
+        or principal.get("principal_type")
+        or ""
+    ).lower()
+
+    # Managed identities — type is usually "ServicePrincipal" but the
+    # principal_type from RBAC is "MSI" or the display name contains
+    # pattern like "(guid)" suffix typical of system-assigned identities.
+    p_type_raw = (principal.get("principal_type") or "").lower()
+    if p_type_raw == "msi" or p_type_raw == "managedidentity":
+        return "managed_identity"
+
+    # Check appId against well-known 1st-party list
+    app_id = principal.get("app_id", "")
+    if app_id and app_id in _FIRST_PARTY_APP_IDS:
+        return "system"
+
+    # Service principals with "Microsoft" vendor display names are likely 1st-party
+    display = (principal.get("display_name") or "").lower()
+    if "serviceprincipal" in obj_type:
+        # Heuristic: display names starting with common MS prefixes
+        ms_prefixes = (
+            "microsoft.", "azure ", "windows azure",
+            "o365 ", "office 365", "graph ", "aad ",
+        )
+        if any(display.startswith(p) for p in ms_prefixes):
+            return "system"
+
+    # Users and groups always need mapping
+    if "user" in obj_type or "group" in obj_type:
+        return "mappable"
+
+    # 3rd-party or custom service principals
+    return "mappable"

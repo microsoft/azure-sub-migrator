@@ -312,6 +312,7 @@ def api_get_principal_mapping():
         })
 
     from tenova.principal_map import (
+        classify_principal,
         extract_principals,
         resolve_source_principals,
         suggest_mappings,
@@ -327,6 +328,10 @@ def api_get_principal_mapping():
             resolve_source_principals(principals, source_graph_token)
         except Exception:
             pass  # resolution is best-effort
+
+    # Phase 1.5: Classify each principal (system / managed_identity / mappable)
+    for p in principals:
+        p["category"] = classify_principal(p)
 
     # Phase 2: Auto-map to target tenant using the target-tenant Graph token
     data = request.get_json(silent=True) or {}
@@ -350,11 +355,19 @@ def api_get_principal_mapping():
             if best.get("confidence") == "high":
                 auto_mapped += 1
 
+    # Category counts for the UI summary cards
+    system_count = sum(1 for p in principals if p.get("category") == "system")
+    mi_count = sum(1 for p in principals if p.get("category") == "managed_identity")
+    mappable_count = sum(1 for p in principals if p.get("category") == "mappable")
+
     return jsonify({
         "principals": principals,
         "has_rbac": True,
         "auto_mapped": auto_mapped,
         "total": len(principals),
+        "system_count": system_count,
+        "managed_identity_count": mi_count,
+        "mappable_count": mappable_count,
     })
 
 
