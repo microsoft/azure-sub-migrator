@@ -209,6 +209,48 @@ def api_start_readiness():
     return jsonify({"task_id": task_id})
 
 
+@main_bp.route("/api/classify-readiness", methods=["POST"])
+@login_required
+@limiter.limit("30 per minute")
+def api_classify_readiness():
+    """Classify an existing scan result into blockers/warnings/info — no API calls.
+
+    Expects ``{scan_task_id}`` in the JSON body.  Uses the already-completed
+    scan task to produce the readiness verdict instantly.
+    """
+    data = request.get_json(silent=True) or {}
+    scan_task_id = (data.get("scan_task_id") or "").strip()
+    if not scan_task_id:
+        return jsonify({"error": "scan_task_id is required"}), 400
+
+    scan_task = get_task(scan_task_id, owner_id=_get_owner_id())
+    if scan_task is None or scan_task.result is None:
+        return jsonify({"error": "No completed scan found"}), 404
+
+    from tenova.readiness import classify_readiness
+
+    readiness = classify_readiness(scan_task.result)
+    return jsonify({"readiness": readiness})
+
+
+@main_bp.route("/api/bundle-scan-data")
+@login_required
+@limiter.limit("30 per minute")
+def api_bundle_scan_data():
+    """Return the original scan data from the uploaded bundle for diff comparison."""
+    bundle_artifacts = session.get("bundle_artifacts", {})
+    scan_data = bundle_artifacts.get("scan_results", {})
+    if not scan_data:
+        return jsonify({"error": "No bundle scan data available"}), 404
+
+    return jsonify({
+        "transfer_safe_count": len(scan_data.get("transfer_safe", [])),
+        "requires_action_count": len(scan_data.get("requires_action", [])),
+        "requires_action": scan_data.get("requires_action", []),
+        "transfer_safe": scan_data.get("transfer_safe", []),
+    })
+
+
 @main_bp.route("/api/start-pre-transfer", methods=["POST"])
 @login_required
 @limiter.limit("5 per minute")

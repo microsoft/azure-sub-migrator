@@ -545,57 +545,58 @@ $(function () {
       });
   });
 
-  // ── Step 2: READINESS CHECK ────────────────────────────────────
+  // ── Step 2: READINESS CHECK (instant — classifies scan results, no re-scan) ──
   $('#wf-readiness-btn').on('click', function () {
-    if (!wfState.subId) return;
+    if (!wfState.scanTaskId) {
+      alert('Please run a scan first.');
+      return;
+    }
     var $btn = $(this).prop('disabled', true);
     $('#wf-readiness-progress').removeClass('d-none');
     $('#wf-readiness-result').addClass('d-none').empty();
 
-    apiPost('{{ url_for("main.api_start_readiness") }}', { subscription_id: wfState.subId })
+    apiPost('{{ url_for("main.api_classify_readiness") }}', { scan_task_id: wfState.scanTaskId })
       .done(function (resp) {
-        wfState.readinessTaskId = resp.task_id;
-        pollTask(resp.task_id, '{{ url_for("main.api_task_status", task_id="TASK_ID") }}',
-          function onComplete(d) {
-            $('#wf-readiness-progress').addClass('d-none');
-            var $r = $('#wf-readiness-result').removeClass('d-none');
-            if (d.status === 'failed') {
-              $r.html('<div class="alert alert-danger mb-0">' + (d.error || 'Check failed') + '</div>');
-              $btn.prop('disabled', false);
-              return;
-            }
-            var rd = d.readiness || {};
-            var blockers = rd.blockers || [];
-            var warnings = rd.warnings || [];
-            var info = rd.info || [];
-            var alertType = blockers.length > 0 ? 'danger' : (warnings.length > 0 ? 'warning' : 'success');
-            var html = '<div class="alert alert-' + alertType + ' mb-2">' +
-              '<i class="bi bi-shield-check me-2"></i><strong>Readiness:</strong> ' +
-              blockers.length + ' blocker(s), ' + warnings.length + ' warning(s), ' +
-              info.length + ' info.' + '</div>';
+        $('#wf-readiness-progress').addClass('d-none');
+        var $r = $('#wf-readiness-result').removeClass('d-none');
+        var rd = resp.readiness || {};
+        var blockers = rd.blockers || [];
+        var warnings = rd.warnings || [];
+        var info = rd.info || [];
+        var alertType = blockers.length > 0 ? 'danger' : (warnings.length > 0 ? 'warning' : 'success');
+        var readyText = rd.ready ? '✅ Ready to transfer' : '⛔ Not ready — fix blockers first';
+        var html = '<div class="alert alert-' + alertType + ' mb-2">' +
+          '<i class="bi bi-shield-check me-2"></i><strong>' + readyText + '</strong> — ' +
+          blockers.length + ' blocker(s), ' + warnings.length + ' warning(s), ' +
+          info.length + ' info.' + '</div>';
 
-            if (blockers.length > 0) {
-              html += '<div class="mb-2"><strong class="text-danger">Blockers:</strong>';
-              html += '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action</th></tr></thead><tbody>';
-              blockers.forEach(function (b) {
-                html += '<tr><td>' + (b.name || '') + '</td><td><code>' + (b.type || '') + '</code></td>' +
-                  '<td>' + (b.issue || '') + '</td><td class="small">' + (b.action || '') + '</td></tr>';
-              });
-              html += '</tbody></table></div>';
-            }
-            if (warnings.length > 0) {
-              html += '<div class="mb-2"><strong class="text-warning">Warnings:</strong>';
-              html += '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action</th></tr></thead><tbody>';
-              warnings.forEach(function (w) {
-                html += '<tr><td>' + (w.name || '') + '</td><td><code>' + (w.type || '') + '</code></td>' +
-                  '<td>' + (w.issue || '') + '</td><td class="small">' + (w.action || '') + '</td></tr>';
-              });
-              html += '</tbody></table></div>';
-            }
-            $r.html(html);
-            markDone($('#wf-step-readiness'));
-          }
-        );
+        if (blockers.length > 0) {
+          html += '<div class="mb-2"><strong class="text-danger"><i class="bi bi-x-octagon me-1"></i>Blockers — must fix before transfer:</strong>';
+          html += '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action Required</th></tr></thead><tbody>';
+          blockers.forEach(function (b) {
+            html += '<tr class="table-danger"><td>' + (b.name || '') + '</td><td><code>' + (b.type || '') + '</code></td>' +
+              '<td>' + (b.issue || '') + '</td><td class="small">' + (b.action || '') + '</td></tr>';
+          });
+          html += '</tbody></table></div>';
+        }
+        if (warnings.length > 0) {
+          html += '<div class="mb-2"><strong class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Warnings — should fix before transfer:</strong>';
+          html += '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action Required</th></tr></thead><tbody>';
+          warnings.forEach(function (w) {
+            html += '<tr class="table-warning"><td>' + (w.name || '') + '</td><td><code>' + (w.type || '') + '</code></td>' +
+              '<td>' + (w.issue || '') + '</td><td class="small">' + (w.action || '') + '</td></tr>';
+          });
+          html += '</tbody></table></div>';
+        }
+        if (info.length > 0) {
+          html += '<div class="mb-0"><strong class="text-info"><i class="bi bi-info-circle me-1"></i>Info:</strong><ul class="mb-0 mt-1">';
+          info.forEach(function (i) {
+            html += '<li class="small">' + (i.category ? '<strong>' + i.category + ':</strong> ' : '') + (i.detail || '') + '</li>';
+          });
+          html += '</ul></div>';
+        }
+        $r.html(html);
+        markDone($('#wf-step-readiness'));
       })
       .fail(function (xhr) {
         $('#wf-readiness-progress').addClass('d-none');
@@ -841,7 +842,7 @@ $(function () {
       });
   });
 
-  // ── Step 8: VALIDATION SCAN ────────────────────────────────────
+  // ── Step 8: VALIDATION SCAN (with pre/post diff) ────────────────
   $('#wf-validation-btn').on('click', function () {
     if (!wfState.subId) {
       alert('No subscription selected.');
@@ -864,31 +865,125 @@ $(function () {
               $btn.prop('disabled', false);
               return;
             }
-            var actionList = d.requires_action || [];
-            var childCount = 0;
-            actionList.forEach(function (r) { childCount += (r.children || []).length; });
-            var actionCount = actionList.length + childCount;
-            var safe = d.transfer_safe_count || 0;
-            var alertType = actionCount > 0 ? 'warning' : 'success';
-            var icon = actionCount === 0 ? 'bi-check-circle' : 'bi-exclamation-triangle';
+
+            var newActionList = d.requires_action || [];
+            var newChildCount = 0;
+            newActionList.forEach(function (r) { newChildCount += (r.children || []).length; });
+            var newActionCount = newActionList.length + newChildCount;
+            var newSafe = d.transfer_safe_count || 0;
+
+            // Build a set of resource IDs that still require action
+            var newActionIds = {};
+            newActionList.forEach(function (r) {
+              if (r.id) newActionIds[r.id.toLowerCase()] = r;
+              (r.children || []).forEach(function (c) {
+                if (c.id) newActionIds[c.id.toLowerCase()] = c;
+              });
+            });
+
+            var alertType = newActionCount > 0 ? 'warning' : 'success';
+            var icon = newActionCount === 0 ? 'bi-check-circle' : 'bi-exclamation-triangle';
             var html = '<div class="alert alert-' + alertType + ' mb-2">' +
               '<i class="bi ' + icon + ' me-2"></i><strong>Validation scan:</strong> ' +
-              safe + ' healthy, ' + actionCount + ' still require attention.</div>';
+              newSafe + ' healthy, ' + newActionCount + ' still require attention.</div>';
 
-            if (actionCount === 0) {
-              html += '<div class="alert alert-success mb-0">' +
+            if (newActionCount === 0) {
+              html += '<div class="alert alert-success mb-2">' +
                 '<i class="bi bi-trophy me-2"></i><strong>All clear!</strong> ' +
                 'All resources are operational in the target tenant. Migration is complete.</div>';
-            } else {
-              html += '<div class="table-responsive" style="max-height:300px;overflow-y:auto;"><table class="table table-sm table-bordered mb-0">' +
-                '<thead class="sticky-top"><tr><th>Resource</th><th>Type</th><th>Action</th></tr></thead><tbody>';
-              actionList.forEach(function (r) {
-                html += '<tr><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
-                  '</code></td><td class="small">' + (r.pre_action || r.post_action || '—') + '</td></tr>';
-              });
-              html += '</tbody></table></div>';
             }
-            $r.html(html);
+
+            // Try to load original scan for diff comparison
+            $.getJSON('{{ url_for("main.api_bundle_scan_data") }}')
+              .done(function (orig) {
+                var origActionList = orig.requires_action || [];
+                var origActionIds = {};
+                origActionList.forEach(function (r) {
+                  if (r.id) origActionIds[r.id.toLowerCase()] = r;
+                  (r.children || []).forEach(function (c) {
+                    if (c.id) origActionIds[c.id.toLowerCase()] = c;
+                  });
+                });
+
+                // Compute diff
+                var fixed = [];   // was in original requires_action, no longer
+                var stillBroken = [];  // in both
+                var newIssues = [];  // in new but not original
+
+                Object.keys(origActionIds).forEach(function (id) {
+                  if (newActionIds[id]) {
+                    stillBroken.push(origActionIds[id]);
+                  } else {
+                    fixed.push(origActionIds[id]);
+                  }
+                });
+                Object.keys(newActionIds).forEach(function (id) {
+                  if (!origActionIds[id]) {
+                    newIssues.push(newActionIds[id]);
+                  }
+                });
+
+                var origTotal = Object.keys(origActionIds).length;
+                html += '<div class="card border-info mt-3"><div class="card-header bg-info bg-opacity-10 fw-semibold">' +
+                  '<i class="bi bi-arrow-left-right me-2"></i>Pre/Post Migration Diff' +
+                  '</div><div class="card-body">';
+
+                html += '<div class="row text-center mb-3">' +
+                  '<div class="col-4"><div class="border rounded p-2"><div class="fs-4 text-success fw-bold">' + fixed.length + '</div>' +
+                  '<small class="text-body-secondary">Fixed</small></div></div>' +
+                  '<div class="col-4"><div class="border rounded p-2"><div class="fs-4 text-warning fw-bold">' + stillBroken.length + '</div>' +
+                  '<small class="text-body-secondary">Still Need Attention</small></div></div>' +
+                  '<div class="col-4"><div class="border rounded p-2"><div class="fs-4 text-danger fw-bold">' + newIssues.length + '</div>' +
+                  '<small class="text-body-secondary">New Issues</small></div></div>' +
+                  '</div>';
+
+                if (fixed.length > 0) {
+                  html += '<details class="mb-2"><summary class="text-success fw-semibold"><i class="bi bi-check-circle me-1"></i>' +
+                    fixed.length + ' issue(s) resolved</summary>' +
+                    '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th></tr></thead><tbody>';
+                  fixed.forEach(function (r) {
+                    html += '<tr class="table-success"><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') + '</code></td></tr>';
+                  });
+                  html += '</tbody></table></details>';
+                }
+                if (stillBroken.length > 0) {
+                  html += '<details class="mb-2"><summary class="text-warning fw-semibold"><i class="bi bi-exclamation-triangle me-1"></i>' +
+                    stillBroken.length + ' issue(s) remaining</summary>' +
+                    '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Action</th></tr></thead><tbody>';
+                  stillBroken.forEach(function (r) {
+                    html += '<tr class="table-warning"><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
+                      '</code></td><td class="small">' + (r.pre_action || r.post_action || '—') + '</td></tr>';
+                  });
+                  html += '</tbody></table></details>';
+                }
+                if (newIssues.length > 0) {
+                  html += '<details class="mb-2"><summary class="text-danger fw-semibold"><i class="bi bi-plus-circle me-1"></i>' +
+                    newIssues.length + ' new issue(s)</summary>' +
+                    '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Action</th></tr></thead><tbody>';
+                  newIssues.forEach(function (r) {
+                    html += '<tr class="table-danger"><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
+                      '</code></td><td class="small">' + (r.pre_action || r.post_action || '—') + '</td></tr>';
+                  });
+                  html += '</tbody></table></details>';
+                }
+
+                html += '</div></div>';
+                $r.html(html);
+              })
+              .fail(function () {
+                // No bundle data — show results without diff
+                if (newActionCount > 0) {
+                  html += '<div class="table-responsive" style="max-height:300px;overflow-y:auto;"><table class="table table-sm table-bordered mb-0">' +
+                    '<thead class="sticky-top"><tr><th>Resource</th><th>Type</th><th>Action</th></tr></thead><tbody>';
+                  newActionList.forEach(function (r) {
+                    html += '<tr><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
+                      '</code></td><td class="small">' + (r.pre_action || r.post_action || '—') + '</td></tr>';
+                  });
+                  html += '</tbody></table></div>';
+                }
+                $r.html(html);
+              });
+
             markDone($('#wf-step-validation'));
             // Mark completion
             $('#wf-step-close').removeClass('opacity-50');
