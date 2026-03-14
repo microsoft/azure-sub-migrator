@@ -249,19 +249,40 @@ def api_get_principal_mapping():
     if not rbac_assignments:
         return jsonify({"principals": [], "has_rbac": False})
 
-    from tenova.principal_map import extract_principals, suggest_mappings
+    from tenova.principal_map import (
+        extract_principals,
+        resolve_source_principals,
+        suggest_mappings,
+    )
 
     rbac_export = {"role_assignments": rbac_assignments}
     principals = extract_principals(rbac_export)
 
+    # Resolve display names from the current tenant
+    try:
+        token = get_access_token()
+        if token:
+            resolve_source_principals(principals, token)
+    except Exception:
+        pass  # resolution is best-effort
+
     # Try to auto-suggest mappings using the current token
     # (after transfer the user is in the target tenant)
     try:
-        target_token = get_access_token()
-        if target_token:
-            suggest_mappings(principals, target_token)
+        token = get_access_token()
+        if token:
+            suggest_mappings(principals, token)
     except Exception:
         pass  # suggestions are best-effort
+
+    # Flatten the best suggestion into top-level fields for the JS
+    for p in principals:
+        suggestions = p.get("suggestions", [])
+        if suggestions:
+            best = suggestions[0]
+            p["suggested_id"] = best.get("id", "")
+            p["suggested_name"] = best.get("displayName", "")
+            p["suggested_confidence"] = best.get("confidence", "")
 
     return jsonify({"principals": principals, "has_rbac": True})
 

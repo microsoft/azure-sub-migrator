@@ -706,15 +706,27 @@ $(function () {
         wfPrincipals.forEach(function (p, i) {
           var suggested = p.suggested_id || '';
           var suggestedLabel = p.suggested_name || '';
+          var confidence = p.suggested_confidence || '';
+          var confBadge = '';
+          if (confidence === 'high') confBadge = ' <span class="badge bg-success">high</span>';
+          else if (confidence === 'medium') confBadge = ' <span class="badge bg-warning text-dark">med</span>';
+          else if (confidence === 'low') confBadge = ' <span class="badge bg-secondary">low</span>';
+
+          // Display name with UPN/mail underneath
+          var nameHtml = (p.display_name && p.display_name !== '(unknown)')
+            ? p.display_name : '<span class="text-body-secondary">(unknown)</span>';
+          if (p.upn) nameHtml += '<br><small class="text-body-secondary">' + p.upn + '</small>';
+          else if (p.mail) nameHtml += '<br><small class="text-body-secondary">' + p.mail + '</small>';
+
           html += '<tr>' +
-            '<td><code class="small">' + (p.principal_id || '').substring(0, 12) + '…</code></td>' +
+            '<td><code class="small" style="word-break:break-all">' + (p.principal_id || '') + '</code></td>' +
             '<td><span class="badge bg-secondary">' + (p.object_type || p.principal_type || 'Unknown') + '</span></td>' +
-            '<td>' + (p.display_name || '(unknown)') +
-              (p.upn ? '<br><small class="text-body-secondary">' + p.upn + '</small>' : '') + '</td>' +
+            '<td>' + nameHtml + '</td>' +
             '<td><input type="text" class="form-control form-control-sm wf-mapping-input" ' +
               'data-old-id="' + (p.principal_id || '') + '" ' +
               'value="' + suggested + '" ' +
               'placeholder="' + (suggestedLabel ? suggestedLabel : 'Enter target principal ID') + '">' +
+              confBadge +
             '</td></tr>';
         });
 
