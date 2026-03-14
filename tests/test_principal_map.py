@@ -50,13 +50,16 @@ class TestExtractPrincipals:
 # ──────────────────────────────────────────────────────────────────────
 
 class TestResolveSourcePrincipals:
-    @patch("tenova.principal_map.get_directory_object")
-    def test_enriches_principals(self, mock_get_obj):
-        mock_get_obj.return_value = {
-            "@odata.type": "#microsoft.graph.user",
-            "displayName": "Alice",
-            "userPrincipalName": "alice@source.com",
-            "mail": "alice@source.com",
+    @patch("tenova.target_tenant.batch_resolve_objects")
+    def test_enriches_principals(self, mock_batch):
+        mock_batch.return_value = {
+            "p1": {
+                "@odata.type": "#microsoft.graph.user",
+                "displayName": "Alice",
+                "userPrincipalName": "alice@source.com",
+                "mail": "alice@source.com",
+                "appId": "",
+            },
         }
         principals = [
             {"principal_id": "p1", "principal_type": "User", "scopes": ["/sub/s"]},
@@ -67,9 +70,9 @@ class TestResolveSourcePrincipals:
         assert result[0]["upn"] == "alice@source.com"
         assert result[0]["object_type"] == "User"
 
-    @patch("tenova.principal_map.get_directory_object")
-    def test_unknown_when_not_found(self, mock_get_obj):
-        mock_get_obj.return_value = None
+    @patch("tenova.target_tenant.batch_resolve_objects")
+    def test_unknown_when_not_found(self, mock_batch):
+        mock_batch.return_value = {}  # empty — nothing resolved
         principals = [
             {"principal_id": "p-gone", "principal_type": "User", "scopes": ["/sub/s"]},
         ]
@@ -84,10 +87,12 @@ class TestResolveSourcePrincipals:
 # ──────────────────────────────────────────────────────────────────────
 
 class TestSuggestMappings:
-    @patch("tenova.principal_map.search_users")
-    def test_upn_match_high_confidence(self, mock_search):
-        mock_search.return_value = [
-            {"id": "new-p1", "displayName": "Alice", "userPrincipalName": "alice@target.com"},
+    @patch("tenova.target_tenant.list_all_service_principals", return_value=[])
+    @patch("tenova.target_tenant.list_all_groups", return_value=[])
+    @patch("tenova.target_tenant.list_all_users")
+    def test_upn_match_high_confidence(self, mock_users, _g, _sp):
+        mock_users.return_value = [
+            {"id": "new-p1", "displayName": "Alice", "userPrincipalName": "alice@target.com", "mail": ""},
         ]
         principals = [{
             "principal_id": "old-p1",
@@ -95,6 +100,7 @@ class TestSuggestMappings:
             "display_name": "Alice",
             "upn": "alice@target.com",
             "mail": "",
+            "app_id": "",
         }]
         result = suggest_mappings(principals, "target-token")
 
@@ -102,10 +108,12 @@ class TestSuggestMappings:
         assert result[0]["suggestions"][0]["confidence"] == "high"
         assert result[0]["suggestions"][0]["id"] == "new-p1"
 
-    @patch("tenova.principal_map.search_groups")
-    def test_group_match(self, mock_search):
-        mock_search.return_value = [
-            {"id": "new-g1", "displayName": "DevTeam"},
+    @patch("tenova.target_tenant.list_all_service_principals", return_value=[])
+    @patch("tenova.target_tenant.list_all_groups")
+    @patch("tenova.target_tenant.list_all_users", return_value=[])
+    def test_group_match(self, _u, mock_groups, _sp):
+        mock_groups.return_value = [
+            {"id": "new-g1", "displayName": "DevTeam", "mail": "", "mailNickname": ""},
         ]
         principals = [{
             "principal_id": "old-g1",
@@ -113,16 +121,19 @@ class TestSuggestMappings:
             "display_name": "DevTeam",
             "upn": "",
             "mail": "",
+            "app_id": "",
         }]
         result = suggest_mappings(principals, "target-token")
 
         assert len(result[0]["suggestions"]) == 1
         assert result[0]["suggestions"][0]["confidence"] == "medium"
 
-    @patch("tenova.principal_map.search_service_principals")
-    def test_sp_match(self, mock_search):
-        mock_search.return_value = [
-            {"id": "new-sp1", "displayName": "MyApp"},
+    @patch("tenova.target_tenant.list_all_service_principals")
+    @patch("tenova.target_tenant.list_all_groups", return_value=[])
+    @patch("tenova.target_tenant.list_all_users", return_value=[])
+    def test_sp_match_by_app_id(self, _u, _g, mock_sps):
+        mock_sps.return_value = [
+            {"id": "new-sp1", "displayName": "MyApp", "appId": "app-123", "servicePrincipalType": "Application"},
         ]
         principals = [{
             "principal_id": "old-sp1",
@@ -130,22 +141,94 @@ class TestSuggestMappings:
             "display_name": "MyApp",
             "upn": "",
             "mail": "",
+            "app_id": "app-123",
         }]
         result = suggest_mappings(principals, "target-token")
 
         assert len(result[0]["suggestions"]) == 1
         assert result[0]["suggestions"][0]["id"] == "new-sp1"
+        assert result[0]["suggestions"][0]["confidence"] == "high"
 
-    def test_no_suggestions_for_unknown(self):
+    @patch("tenova.target_tenant.list_all_service_principals")
+    @patch("tenova.target_tenant.list_all_groups", return_value=[])
+    @patch("tenova.target_tenant.list_all_users", return_value=[])
+    def test_sp_match_by_display_name(self, _u, _g, mock_sps):
+        mock_sps.return_value = [
+            {"id": "new-sp1", "displayName": "MyApp", "appId": "different-app", "servicePrincipalType": "Application"},
+        ]
+        principals = [{
+            "principal_id": "old-sp1",
+            "object_type": "ServicePrincipal",
+            "display_name": "MyApp",
+            "upn": "",
+            "mail": "",
+            "app_id": "",  # no appId, so falls through to display name
+        }]
+        result = suggest_mappings(principals, "target-token")
+
+        assert len(result[0]["suggestions"]) == 1
+        assert result[0]["suggestions"][0]["id"] == "new-sp1"
+        assert result[0]["suggestions"][0]["confidence"] == "medium"
+
+    @patch("tenova.target_tenant.list_all_service_principals", return_value=[])
+    @patch("tenova.target_tenant.list_all_groups", return_value=[])
+    @patch("tenova.target_tenant.list_all_users", return_value=[])
+    def test_no_suggestions_for_unknown(self, _u, _g, _sp):
         principals = [{
             "principal_id": "old-x",
             "object_type": "Unknown",
             "display_name": "(unknown)",
             "upn": "",
             "mail": "",
+            "app_id": "",
         }]
         result = suggest_mappings(principals, "target-token")
         assert result[0]["suggestions"] == []
+
+    @patch("tenova.target_tenant.list_all_service_principals", return_value=[])
+    @patch("tenova.target_tenant.list_all_groups", return_value=[])
+    @patch("tenova.target_tenant.list_all_users")
+    def test_domain_transform_match(self, mock_users, _g, _sp):
+        mock_users.return_value = [
+            {"id": "new-p1", "displayName": "Alice", "userPrincipalName": "alice@target.com", "mail": ""},
+        ]
+        principals = [{
+            "principal_id": "old-p1",
+            "object_type": "User",
+            "display_name": "Alice",
+            "upn": "alice@source.com",
+            "mail": "",
+            "app_id": "",
+        }]
+        result = suggest_mappings(
+            principals, "target-token",
+            domain_mapping={"source.com": "target.com"},
+        )
+
+        assert len(result[0]["suggestions"]) == 1
+        assert result[0]["suggestions"][0]["confidence"] == "high"
+        assert "domain-transform" in result[0]["suggestions"][0]["match_reason"]
+
+    @patch("tenova.target_tenant.list_all_service_principals", return_value=[])
+    @patch("tenova.target_tenant.list_all_groups", return_value=[])
+    @patch("tenova.target_tenant.list_all_users")
+    def test_email_match(self, mock_users, _g, _sp):
+        mock_users.return_value = [
+            {"id": "new-p1", "displayName": "Bob", "userPrincipalName": "bob@target.com", "mail": "bob@company.com"},
+        ]
+        principals = [{
+            "principal_id": "old-p1",
+            "object_type": "User",
+            "display_name": "Bob",
+            "upn": "",
+            "mail": "bob@company.com",
+            "app_id": "",
+        }]
+        result = suggest_mappings(principals, "target-token")
+
+        assert len(result[0]["suggestions"]) == 1
+        assert result[0]["suggestions"][0]["confidence"] == "high"
+        assert result[0]["suggestions"][0]["match_reason"] == "Email exact match"
 
 
 # ──────────────────────────────────────────────────────────────────────

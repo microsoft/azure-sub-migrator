@@ -82,6 +82,10 @@ def create_app() -> Flask:
     app.config["ENTRA_SCOPES"] = [
         "https://management.azure.com/user_impersonation",
     ]
+    # Graph scopes for principal resolution (incremental consent)
+    app.config["GRAPH_SCOPES"] = [
+        "https://graph.microsoft.com/Directory.Read.All",
+    ]
 
     # Certificate-based credential for MSAL (preferred over client secret).
     # On Azure App Service (Linux), WEBSITE_LOAD_CERTIFICATES causes the PFX

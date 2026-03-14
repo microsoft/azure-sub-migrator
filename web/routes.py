@@ -19,7 +19,7 @@ from flask import (
 )
 
 from web.app import limiter
-from web.auth_web import get_access_token, login_required
+from web.auth_web import get_access_token, get_graph_token, login_required
 from web.tasks import (
     fetch_subscriptions,
     get_task,
@@ -282,7 +282,16 @@ def api_start_pre_transfer():
 @login_required
 @limiter.limit("10 per minute")
 def api_get_principal_mapping():
-    """Extract principals from the uploaded bundle and suggest mappings."""
+    """Extract principals from the uploaded bundle and auto-map them.
+
+    Uses Microsoft Graph to:
+      1. Batch-resolve source-tenant display names (via ``/$batch``).
+      2. Fetch the full target-tenant directory and auto-match using
+         the Sharegate-style multi-strategy algorithm.
+
+    If no Graph token is available (missing consent), returns
+    ``{"needs_graph_consent": true}`` so the UI can prompt the user.
+    """
     bundle_artifacts = session.get("bundle_artifacts", {})
     if not bundle_artifacts:
         return jsonify({"error": "No bundle uploaded. Please upload a migration bundle first."}), 400
@@ -300,24 +309,39 @@ def api_get_principal_mapping():
     rbac_export = {"role_assignments": rbac_assignments}
     principals = extract_principals(rbac_export)
 
-    # Resolve display names from the current tenant
+    # Get a Graph token (required for directory queries)
+    graph_token = get_graph_token()
+    if not graph_token:
+        # No Graph consent yet — tell the UI to redirect for consent
+        return jsonify({
+            "principals": principals,
+            "has_rbac": True,
+            "needs_graph_consent": True,
+            "consent_url": url_for("auth.consent_graph"),
+        })
+
+    # Phase 1: Batch-resolve source-tenant display names
     try:
-        token = get_access_token()
-        if token:
-            resolve_source_principals(principals, token)
+        resolve_source_principals(principals, graph_token)
     except Exception:
         pass  # resolution is best-effort
 
-    # Try to auto-suggest mappings using the current token
-    # (after transfer the user is in the target tenant)
+    # Phase 2: Auto-map to target tenant
+    # If a separate target-tenant token exists (post-transfer), use it;
+    # otherwise the user is still in the source tenant (testing / pre-transfer)
+    target_token = session.get("target_access_token", "") or graph_token
+
+    # Optional domain mapping from the request body
+    data = request.get_json(silent=True) or {}
+    domain_mapping = data.get("domain_mapping", {})
+
     try:
-        token = get_access_token()
-        if token:
-            suggest_mappings(principals, token)
+        suggest_mappings(principals, target_token, domain_mapping=domain_mapping)
     except Exception:
         pass  # suggestions are best-effort
 
     # Flatten the best suggestion into top-level fields for the JS
+    auto_mapped = 0
     for p in principals:
         suggestions = p.get("suggestions", [])
         if suggestions:
@@ -325,8 +349,16 @@ def api_get_principal_mapping():
             p["suggested_id"] = best.get("id", "")
             p["suggested_name"] = best.get("displayName", "")
             p["suggested_confidence"] = best.get("confidence", "")
+            p["match_reason"] = best.get("match_reason", "")
+            if best.get("confidence") == "high":
+                auto_mapped += 1
 
-    return jsonify({"principals": principals, "has_rbac": True})
+    return jsonify({
+        "principals": principals,
+        "has_rbac": True,
+        "auto_mapped": auto_mapped,
+        "total": len(principals),
+    })
 
 
 @main_bp.route("/api/start-post-transfer", methods=["POST"])
@@ -633,12 +665,12 @@ def principal_mapping(task_id: str):
     principals: list = []
     if rbac_export:
         principals = extract_principals(rbac_export)
-        # Resolve source display names
-        source_token = get_access_token()
-        if source_token:
-            resolve_source_principals(principals, source_token)
+        # Resolve source display names (needs Graph token)
+        graph_token = get_graph_token()
+        if graph_token:
+            resolve_source_principals(principals, graph_token)
         # Auto-suggest matches in target tenant
-        target_token = session.get("target_access_token", "")
+        target_token = session.get("target_access_token", "") or graph_token or ""
         if target_token:
             suggest_mappings(principals, target_token)
 

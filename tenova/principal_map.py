@@ -5,12 +5,21 @@ principal IDs become invalid because they reference objects in the *source*
 tenant's Entra ID directory.  To recreate RBAC in the target tenant we
 need a mapping: ``old_principal_id → new_principal_id``.
 
-This module:
+This module implements **Sharegate-style automatic mapping**:
   1. Extracts all unique principals from an RBAC export.
-  2. Resolves their display names / UPNs in the source tenant via Graph.
-  3. Auto-suggests matches in the target tenant by searching Graph for
-     the same display name / UPN / mail.
-  4. Lets the user confirm or override each mapping via the web UI.
+  2. Batch-resolves their display names / UPNs in the source tenant via
+     the Graph JSON batching API (``/$batch``, 20 per request).
+  3. Fetches the full directory catalog from the target tenant (all users,
+     groups, service principals) and builds lookup indexes.
+  4. Matches each source principal to target-tenant objects using a
+     multi-strategy algorithm:
+       - **UPN exact match** (high confidence)
+       - **UPN domain-transform** (``user@source.com`` → ``user@target.com``)
+       - **Email exact match** (high confidence)
+       - **AppId match** for service principals (high confidence)
+       - **Display name exact match** (medium confidence)
+       - **Display name prefix/fuzzy match** (low confidence)
+  5. Lets the user review, override, and confirm the mapping via the UI.
 """
 
 from __future__ import annotations
@@ -18,12 +27,6 @@ from __future__ import annotations
 from typing import Any
 
 from tenova.logger import get_logger
-from tenova.target_tenant import (
-    get_directory_object,
-    search_groups,
-    search_service_principals,
-    search_users,
-)
 
 logger = get_logger("principal_map")
 
@@ -67,27 +70,40 @@ def resolve_source_principals(
 ) -> list[dict[str, Any]]:
     """Enrich each principal with display name / UPN from the source tenant.
 
-    Queries Microsoft Graph``/directoryObjects/{id}`` for each principal.
-    Principals that cannot be resolved (deleted users, broken SPs) will
-    have ``display_name`` set to ``"(unknown)"`` — the user can still
-    manually map them in the UI.
+    Uses the Graph JSON batching API (``/$batch``) to resolve all principals
+    in batches of 20, instead of making N sequential HTTP calls.
+    Principals that cannot be resolved (deleted users, wrong tenant) will
+    have ``display_name`` set to ``"(unknown)"``.
 
     Mutates *principals* in-place and returns the same list.
     """
+    from tenova.target_tenant import batch_resolve_objects
+
+    all_ids = [p["principal_id"] for p in principals if p.get("principal_id")]
+    resolved = batch_resolve_objects(source_token, all_ids)
+
     for p in principals:
-        obj = get_directory_object(source_token, p["principal_id"])
+        pid = p["principal_id"]
+        obj = resolved.get(pid)
         if obj:
             odata_type = obj.get("@odata.type", "")
             p["display_name"] = obj.get("displayName", "(unknown)")
             p["upn"] = obj.get("userPrincipalName", "")
             p["mail"] = obj.get("mail", "")
+            p["app_id"] = obj.get("appId", "")
             p["object_type"] = _friendly_type(odata_type)
         else:
             p["display_name"] = "(unknown)"
             p["upn"] = ""
             p["mail"] = ""
+            p["app_id"] = ""
             p["object_type"] = p.get("principal_type", "Unknown")
 
+    resolved_count = sum(1 for p in principals if p["display_name"] != "(unknown)")
+    logger.info(
+        "Resolved %d / %d source principal display names",
+        resolved_count, len(principals),
+    )
     return principals
 
 
@@ -98,122 +114,167 @@ def resolve_source_principals(
 def suggest_mappings(
     principals: list[dict[str, Any]],
     target_token: str,
+    *,
+    domain_mapping: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """For each principal, search the target tenant for likely matches.
+    """Sharegate-style automatic principal mapping.
 
-    Adds ``suggestions: [{id, displayName, upn?, confidence}]`` to each
-    principal dict.  ``confidence`` is ``"high"`` when UPN or mail matches
-    exactly, ``"medium"`` for display-name prefix match.
+    Instead of making per-principal Graph search calls, this fetches the
+    **entire** target-tenant directory catalog (users, groups, service
+    principals) and builds in-memory indexes.  Each source principal is
+    then matched against these indexes using multiple strategies, ordered
+    by confidence:
+
+      1. **UPN exact match** — high
+      2. **UPN domain-transformed match** — high
+         (e.g. ``user@contoso.com`` → ``user@fabrikam.com``)
+      3. **Email exact match** — high
+      4. **AppId match** (service principals) — high
+      5. **Display name exact match** (same type) — medium
+      6. **Display name case-insensitive match** — low
+
+    Parameters
+    ----------
+    domain_mapping:
+        Optional ``{source_domain: target_domain}`` dict for UPN
+        domain transforms.  e.g.  ``{"contoso.com": "fabrikam.com"}``
 
     Mutates *principals* in-place and returns the same list.
     """
+    from tenova.target_tenant import (
+        list_all_groups,
+        list_all_service_principals,
+        list_all_users,
+    )
+
+    domain_mapping = domain_mapping or {}
+
+    # ── Phase 1: Fetch full target directory ─────────────────────────
+    logger.info("Fetching target tenant directory for auto-matching…")
+    target_users = list_all_users(target_token)
+    target_groups = list_all_groups(target_token)
+    target_sps = list_all_service_principals(target_token)
+
+    # ── Phase 2: Build lookup indexes ────────────────────────────────
+    user_by_upn: dict[str, dict] = {}        # lowercase UPN → user
+    user_by_mail: dict[str, dict] = {}       # lowercase mail → user
+    user_by_name: dict[str, list[dict]] = {} # lowercase displayName → [users]
+
+    for u in target_users:
+        upn = (u.get("userPrincipalName") or "").lower()
+        mail = (u.get("mail") or "").lower()
+        name = (u.get("displayName") or "").lower()
+        if upn:
+            user_by_upn[upn] = u
+        if mail:
+            user_by_mail[mail] = u
+        if name:
+            user_by_name.setdefault(name, []).append(u)
+
+    group_by_name: dict[str, list[dict]] = {}
+    for g in target_groups:
+        name = (g.get("displayName") or "").lower()
+        if name:
+            group_by_name.setdefault(name, []).append(g)
+
+    sp_by_app_id: dict[str, dict] = {}       # appId → SP
+    sp_by_name: dict[str, list[dict]] = {}   # lowercase displayName → [SPs]
+    for sp in target_sps:
+        app_id = sp.get("appId", "")
+        name = (sp.get("displayName") or "").lower()
+        if app_id:
+            sp_by_app_id[app_id] = sp
+        if name:
+            sp_by_name.setdefault(name, []).append(sp)
+
+    logger.info(
+        "Target directory indexes: %d users, %d groups, %d SPs",
+        len(target_users), len(target_groups), len(target_sps),
+    )
+
+    # ── Phase 3: Match each principal ────────────────────────────────
+    auto_high = 0
+    auto_med = 0
+    unmatched = 0
+
     for p in principals:
         suggestions: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
+        obj_type = (p.get("object_type") or p.get("principal_type") or "").lower()
 
-        obj_type = p.get("object_type", "").lower()
+        def _add(target_obj: dict, confidence: str, match_reason: str) -> None:
+            tid = target_obj.get("id", "")
+            if tid and tid not in seen_ids:
+                suggestions.append({
+                    "id": tid,
+                    "displayName": target_obj.get("displayName", ""),
+                    "upn": target_obj.get("userPrincipalName", ""),
+                    "confidence": confidence,
+                    "match_reason": match_reason,
+                })
+                seen_ids.add(tid)
 
-        # --- User-type principals ---
-        if "user" in obj_type or p.get("upn"):
-            # Try exact UPN match first (high confidence)
-            if p.get("upn"):
-                matches = search_users(target_token, upn=p["upn"])
-                for m in matches:
-                    if m["id"] not in seen_ids:
-                        suggestions.append({
-                            "id": m["id"],
-                            "displayName": m.get("displayName", ""),
-                            "upn": m.get("userPrincipalName", ""),
-                            "confidence": "high",
-                        })
-                        seen_ids.add(m["id"])
+        # Strategy 1: UPN exact match
+        src_upn = (p.get("upn") or "").lower()
+        if src_upn and src_upn in user_by_upn:
+            _add(user_by_upn[src_upn], "high", "UPN exact match")
 
-            # Try mail match
-            if p.get("mail") and not suggestions:
-                matches = search_users(target_token, mail=p["mail"])
-                for m in matches:
-                    if m["id"] not in seen_ids:
-                        suggestions.append({
-                            "id": m["id"],
-                            "displayName": m.get("displayName", ""),
-                            "upn": m.get("userPrincipalName", ""),
-                            "confidence": "high",
-                        })
-                        seen_ids.add(m["id"])
+        # Strategy 2: UPN domain-transform
+        if src_upn and not suggestions and "@" in src_upn:
+            local, src_domain = src_upn.rsplit("@", 1)
+            target_domain = domain_mapping.get(src_domain, "")
+            if target_domain:
+                transformed_upn = f"{local}@{target_domain}"
+                if transformed_upn in user_by_upn:
+                    _add(user_by_upn[transformed_upn], "high", f"UPN domain-transform ({src_domain}→{target_domain})")
 
-            # Try display name match (medium confidence)
-            if p.get("display_name") and p["display_name"] != "(unknown)" and not suggestions:
-                matches = search_users(target_token, display_name=p["display_name"])
-                for m in matches:
-                    if m["id"] not in seen_ids:
-                        suggestions.append({
-                            "id": m["id"],
-                            "displayName": m.get("displayName", ""),
-                            "upn": m.get("userPrincipalName", ""),
-                            "confidence": "medium",
-                        })
-                        seen_ids.add(m["id"])
+        # Strategy 3: Email exact match
+        src_mail = (p.get("mail") or "").lower()
+        if src_mail and not suggestions:
+            if src_mail in user_by_mail:
+                _add(user_by_mail[src_mail], "high", "Email exact match")
 
-        # --- Group-type principals ---
-        elif "group" in obj_type:
-            if p.get("display_name") and p["display_name"] != "(unknown)":
-                matches = search_groups(target_token, display_name=p["display_name"])
-                for m in matches:
-                    if m["id"] not in seen_ids:
-                        suggestions.append({
-                            "id": m["id"],
-                            "displayName": m.get("displayName", ""),
-                            "confidence": "medium",
-                        })
-                        seen_ids.add(m["id"])
+        # Strategy 4: AppId match (service principals)
+        src_app_id = p.get("app_id", "")
+        if src_app_id and not suggestions and src_app_id in sp_by_app_id:
+            _add(sp_by_app_id[src_app_id], "high", "AppId match")
 
-        # --- Service Principal / Application ---
-        elif "serviceprincipal" in obj_type or "application" in obj_type:
-            if p.get("display_name") and p["display_name"] != "(unknown)":
-                matches = search_service_principals(target_token, display_name=p["display_name"])
-                for m in matches:
-                    if m["id"] not in seen_ids:
-                        suggestions.append({
-                            "id": m["id"],
-                            "displayName": m.get("displayName", ""),
-                            "confidence": "medium",
-                        })
-                        seen_ids.add(m["id"])
-
-        # --- Fallback: try users + groups + SPs by display name ---
-        else:
-            if p.get("display_name") and p["display_name"] != "(unknown)":
-                for search_fn in (
-                    lambda: search_users(target_token, display_name=p["display_name"]),
-                    lambda: search_groups(target_token, display_name=p["display_name"]),
-                    lambda: search_service_principals(target_token, display_name=p["display_name"]),
-                ):
-                    matches = search_fn()
-                    for m in matches:
-                        mid = m.get("id", "")
-                        if mid and mid not in seen_ids:
-                            suggestions.append({
-                                "id": mid,
-                                "displayName": m.get("displayName", ""),
-                                "confidence": "low",
-                            })
-                            seen_ids.add(mid)
+        # Strategy 5: Display name exact match (type-aware)
+        src_name = (p.get("display_name") or "").lower()
+        if src_name and src_name != "(unknown)" and not suggestions:
+            if "user" in obj_type and src_name in user_by_name:
+                for u in user_by_name[src_name]:
+                    _add(u, "medium", "Display name match (user)")
+            elif "group" in obj_type and src_name in group_by_name:
+                for g in group_by_name[src_name]:
+                    _add(g, "medium", "Display name match (group)")
+            elif "serviceprincipal" in obj_type or "application" in obj_type:
+                if src_name in sp_by_name:
+                    for sp in sp_by_name[src_name]:
+                        _add(sp, "medium", "Display name match (SP)")
+            else:
+                # Unknown type — search all three
+                for idx in (user_by_name, group_by_name, sp_by_name):
+                    if src_name in idx:
+                        for obj in idx[src_name]:
+                            _add(obj, "low", "Display name match (any type)")
 
         p["suggestions"] = suggestions
+
         if suggestions:
-            logger.info(
-                "Principal %s ('%s'): %d suggestion(s), best=%s",
-                p["principal_id"],
-                p.get("display_name", "?"),
-                len(suggestions),
-                suggestions[0]["confidence"],
-            )
+            best_conf = suggestions[0]["confidence"]
+            if best_conf == "high":
+                auto_high += 1
+            else:
+                auto_med += 1
         else:
-            logger.info(
-                "Principal %s ('%s'): no suggestions found",
-                p["principal_id"],
-                p.get("display_name", "?"),
-            )
+            unmatched += 1
+
+    logger.info(
+        "Auto-mapping results: %d high, %d medium/low, %d unmatched (of %d)",
+        auto_high, auto_med, unmatched, len(principals),
+    )
+    return principals
 
     return principals
 

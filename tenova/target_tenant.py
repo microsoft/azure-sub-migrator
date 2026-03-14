@@ -209,3 +209,115 @@ def get_directory_object(access_token: str, object_id: str) -> dict[str, Any] | 
     except Exception as exc:
         logger.warning("Graph directoryObject lookup failed for %s: %s", object_id, exc)
         return None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Batch resolution (up to 20 objects per request via $batch)
+# ──────────────────────────────────────────────────────────────────────
+
+def batch_resolve_objects(
+    access_token: str,
+    object_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Resolve multiple directory objects using Graph JSON batching.
+
+    Returns ``{object_id: graph_object}`` for each successfully resolved ID.
+    Unresolvable IDs (deleted, wrong tenant) are silently omitted.
+    """
+    results: dict[str, dict[str, Any]] = {}
+    # Graph batching supports up to 20 requests per batch
+    batch_size = 20
+
+    for start in range(0, len(object_ids), batch_size):
+        chunk = object_ids[start : start + batch_size]
+        batch_requests = [
+            {
+                "id": oid,
+                "method": "GET",
+                "url": f"/directoryObjects/{oid}",
+            }
+            for oid in chunk
+        ]
+
+        try:
+            resp = requests.post(
+                f"{GRAPH_BASE}/$batch",
+                headers=_graph_headers(access_token),
+                json={"requests": batch_requests},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            for item in resp.json().get("responses", []):
+                if item.get("status") == 200:
+                    body = item.get("body", {})
+                    results[item["id"]] = body
+        except Exception as exc:
+            logger.warning("Graph batch resolve failed for chunk starting at %d: %s", start, exc)
+
+    logger.info("Batch-resolved %d / %d directory objects", len(results), len(object_ids))
+    return results
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Bulk directory listing (for Sharegate-style auto-matching)
+# ──────────────────────────────────────────────────────────────────────
+
+def _paginated_graph_list(
+    access_token: str,
+    url: str,
+    *,
+    max_pages: int = 10,
+) -> list[dict[str, Any]]:
+    """Follow @odata.nextLink to fetch paginated Graph results."""
+    all_items: list[dict[str, Any]] = []
+    page = 0
+
+    while url and page < max_pages:
+        try:
+            resp = requests.get(url, headers=_graph_headers(access_token), timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            all_items.extend(data.get("value", []))
+            url = data.get("@odata.nextLink", "")
+            page += 1
+        except Exception as exc:
+            logger.warning("Graph paginated list failed on page %d: %s", page, exc)
+            break
+
+    return all_items
+
+
+def list_all_users(access_token: str) -> list[dict[str, Any]]:
+    """Fetch all users from the tenant (paginated, select key fields)."""
+    url = (
+        f"{GRAPH_BASE}/users"
+        f"?$select=id,displayName,userPrincipalName,mail"
+        f"&$top=999"
+    )
+    users = _paginated_graph_list(access_token, url)
+    logger.info("Fetched %d user(s) from directory", len(users))
+    return users
+
+
+def list_all_groups(access_token: str) -> list[dict[str, Any]]:
+    """Fetch all groups from the tenant (paginated, select key fields)."""
+    url = (
+        f"{GRAPH_BASE}/groups"
+        f"?$select=id,displayName,mail,mailNickname"
+        f"&$top=999"
+    )
+    groups = _paginated_graph_list(access_token, url)
+    logger.info("Fetched %d group(s) from directory", len(groups))
+    return groups
+
+
+def list_all_service_principals(access_token: str) -> list[dict[str, Any]]:
+    """Fetch all service principals from the tenant (paginated)."""
+    url = (
+        f"{GRAPH_BASE}/servicePrincipals"
+        f"?$select=id,displayName,appId,servicePrincipalType"
+        f"&$top=999"
+    )
+    sps = _paginated_graph_list(access_token, url)
+    logger.info("Fetched %d service principal(s) from directory", len(sps))
+    return sps

@@ -78,6 +78,31 @@ def get_access_token() -> str | None:
     return session.get("access_token")
 
 
+def get_graph_token() -> str | None:
+    """Return a Microsoft Graph access token, or None if consent is needed.
+
+    Uses the MSAL refresh token (from the initial ARM login) to silently
+    acquire a Graph token.  This works when:
+      1. The app registration has Directory.Read.All delegated permission.
+      2. Admin consent has been granted (or user-consent is allowed).
+
+    If silent acquisition fails, the caller should redirect the user to
+    ``/auth/consent-graph`` for incremental consent.
+    """
+    app = _build_msal_app()
+    accounts = app.get_accounts()
+    if not accounts:
+        return None
+
+    graph_scopes = current_app.config.get("GRAPH_SCOPES", [
+        "https://graph.microsoft.com/Directory.Read.All",
+    ])
+    result = app.acquire_token_silent(scopes=graph_scopes, account=accounts[0])
+    if result and "access_token" in result:
+        return result["access_token"]
+    return None
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Routes
 # ──────────────────────────────────────────────────────────────────────
@@ -261,6 +286,71 @@ def target_tenant_callback():
     )
     if task_id:
         return redirect(url_for("main.principal_mapping", task_id=task_id))
+    return redirect(url_for("main.dashboard"))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Incremental consent for Microsoft Graph (principal mapping)
+# ──────────────────────────────────────────────────────────────────────
+
+@auth_bp.route("/consent-graph")
+@login_required
+def consent_graph():
+    """Redirect the user to grant Graph permissions (incremental consent).
+
+    After consent, the MSAL refresh token can be exchanged for a Graph
+    access token via ``get_graph_token()``.
+    """
+    session["graph_consent_state"] = str(uuid.uuid4())
+    app = _build_msal_app()
+    graph_scopes = current_app.config.get("GRAPH_SCOPES", [
+        "https://graph.microsoft.com/Directory.Read.All",
+    ])
+    auth_url = app.get_authorization_request_url(
+        scopes=graph_scopes,
+        state=session["graph_consent_state"],
+        redirect_uri=(
+            request.url_root.rstrip("/")
+            + url_for("auth.consent_graph_callback")
+        ),
+        login_hint=session.get("user", {}).get("preferred_username", ""),
+    )
+    return redirect(auth_url)
+
+
+@auth_bp.route("/consent-graph/callback")
+def consent_graph_callback():
+    """Handle redirect after Graph consent; redeem code to populate cache."""
+    if request.args.get("state") != session.get("graph_consent_state"):
+        flash("Session state mismatch. Please try again.", "warning")
+        return redirect(url_for("main.dashboard"))
+
+    if "error" in request.args:
+        desc = request.args.get("error_description", "Unknown error")
+        flash(f"Graph consent failed: {desc}", "danger")
+        return redirect(url_for("main.dashboard"))
+
+    app = _build_msal_app()
+    graph_scopes = current_app.config.get("GRAPH_SCOPES", [
+        "https://graph.microsoft.com/Directory.Read.All",
+    ])
+    result = app.acquire_token_by_authorization_code(
+        code=request.args["code"],
+        scopes=graph_scopes,
+        redirect_uri=(
+            request.url_root.rstrip("/")
+            + url_for("auth.consent_graph_callback")
+        ),
+    )
+    if "error" in result:
+        flash(
+            f"Graph token error: {result.get('error_description', '')}",
+            "danger",
+        )
+    else:
+        session["graph_consented"] = True
+        flash("Graph permissions granted — display names will now resolve.", "success")
+
     return redirect(url_for("main.dashboard"))
 
 
