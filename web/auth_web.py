@@ -29,27 +29,52 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Helpers
+# Helpers — MSAL token cache persistence
 # ──────────────────────────────────────────────────────────────────────
 
-def _build_msal_app() -> msal.ConfidentialClientApplication:
-    """Build a ConfidentialClientApplication from Flask config."""
+def _load_cache() -> msal.SerializableTokenCache:
+    """Load the MSAL token cache from the Flask session.
+
+    We serialise the cache as JSON in ``session['msal_cache']`` so that
+    the refresh token survives across requests.  This is critical for
+    cross-resource token acquisition (e.g. ARM login → Graph token).
+    """
+    cache = msal.SerializableTokenCache()
+    blob = session.get("msal_cache")
+    if blob:
+        cache.deserialize(blob)
+    return cache
+
+
+def _save_cache(cache: msal.SerializableTokenCache) -> None:
+    """Persist the MSAL token cache back to the Flask session."""
+    if cache.has_state_changed:
+        session["msal_cache"] = cache.serialize()
+
+
+def _build_msal_app(
+    cache: msal.SerializableTokenCache | None = None,
+) -> msal.ConfidentialClientApplication:
+    """Build a ConfidentialClientApplication with an optional token cache."""
     return msal.ConfidentialClientApplication(
         client_id=current_app.config["ENTRA_CLIENT_ID"],
         client_credential=current_app.config["ENTRA_CLIENT_CREDENTIAL"],
         authority=current_app.config["ENTRA_AUTHORITY"],
+        token_cache=cache,
     )
 
 
 def _get_token_from_cache() -> dict[str, Any] | None:
     """Try to silently acquire a token from the MSAL cache."""
-    app = _build_msal_app()
+    cache = _load_cache()
+    app = _build_msal_app(cache)
     accounts = app.get_accounts()
     if accounts:
         result = app.acquire_token_silent(
             scopes=current_app.config["ENTRA_SCOPES"],
             account=accounts[0],
         )
+        _save_cache(cache)
         if result and "access_token" in result:
             return result
     return None
@@ -79,28 +104,36 @@ def get_access_token() -> str | None:
 
 
 def get_graph_token() -> str | None:
-    """Return a Microsoft Graph access token, or None if consent is needed.
+    """Return a Microsoft Graph access token for the source tenant.
 
-    Uses the MSAL refresh token (from the initial ARM login) to silently
-    acquire a Graph token.  This works when:
-      1. The app registration has Directory.Read.All delegated permission.
-      2. Admin consent has been granted (or user-consent is allowed).
-
-    If silent acquisition fails, the caller should redirect the user to
-    ``/auth/consent-graph`` for incremental consent.
+    Strategy (ordered by preference):
+      1. Silent acquisition via MSAL cache — uses the refresh token from
+         the initial ARM login to get a Graph token for a different
+         resource.  Requires Directory.Read.All delegated permission with
+         admin consent.
+      2. Explicit token stored in the session by the consent-graph
+         callback (``session['source_graph_token']``).
+      3. ``None`` — caller should redirect to ``/auth/consent-graph``.
     """
-    app = _build_msal_app()
+    # Try MSAL silent acquisition (cross-resource refresh)
+    cache = _load_cache()
+    app = _build_msal_app(cache)
     accounts = app.get_accounts()
-    if not accounts:
-        return None
+    if accounts:
+        graph_scopes = current_app.config.get("GRAPH_SCOPES", [
+            "https://graph.microsoft.com/Directory.Read.All",
+        ])
+        result = app.acquire_token_silent(
+            scopes=graph_scopes, account=accounts[0],
+        )
+        _save_cache(cache)
+        if result and "access_token" in result:
+            # Also stash it so we have a fallback for this session
+            session["source_graph_token"] = result["access_token"]
+            return result["access_token"]
 
-    graph_scopes = current_app.config.get("GRAPH_SCOPES", [
-        "https://graph.microsoft.com/Directory.Read.All",
-    ])
-    result = app.acquire_token_silent(scopes=graph_scopes, account=accounts[0])
-    if result and "access_token" in result:
-        return result["access_token"]
-    return None
+    # Fallback: explicit token from consent-graph callback
+    return session.get("source_graph_token")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -137,7 +170,8 @@ def _enforce_idle_timeout():
 def login():
     """Start the OAuth2 authorization-code flow."""
     session["state"] = str(uuid.uuid4())
-    app = _build_msal_app()
+    cache = _load_cache()
+    app = _build_msal_app(cache)
     auth_url = app.get_authorization_request_url(
         scopes=current_app.config["ENTRA_SCOPES"],
         state=session["state"],
@@ -159,7 +193,8 @@ def callback():
     if "error" in request.args:
         return f"Auth error: {request.args['error_description']}", 400
 
-    app = _build_msal_app()
+    cache = _load_cache()
+    app = _build_msal_app(cache)
     result = app.acquire_token_by_authorization_code(
         code=request.args["code"],
         scopes=current_app.config["ENTRA_SCOPES"],
@@ -168,6 +203,9 @@ def callback():
 
     if "error" in result:
         return f"Token error: {result.get('error_description')}", 400
+
+    # Persist the MSAL cache (stores refresh token for cross-resource use)
+    _save_cache(cache)
 
     # Store user info, token, and tenant in session
     claims = result.get("id_token_claims", {})
@@ -302,7 +340,8 @@ def consent_graph():
     access token via ``get_graph_token()``.
     """
     session["graph_consent_state"] = str(uuid.uuid4())
-    app = _build_msal_app()
+    cache = _load_cache()
+    app = _build_msal_app(cache)
     graph_scopes = current_app.config.get("GRAPH_SCOPES", [
         "https://graph.microsoft.com/Directory.Read.All",
     ])
@@ -330,7 +369,8 @@ def consent_graph_callback():
         flash(f"Graph consent failed: {desc}", "danger")
         return redirect(url_for("main.dashboard"))
 
-    app = _build_msal_app()
+    cache = _load_cache()
+    app = _build_msal_app(cache)
     graph_scopes = current_app.config.get("GRAPH_SCOPES", [
         "https://graph.microsoft.com/Directory.Read.All",
     ])
@@ -348,6 +388,8 @@ def consent_graph_callback():
             "danger",
         )
     else:
+        _save_cache(cache)
+        session["source_graph_token"] = result["access_token"]
         session["graph_consented"] = True
         flash("Graph permissions granted — display names will now resolve.", "success")
 
