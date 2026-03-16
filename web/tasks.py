@@ -143,6 +143,7 @@ def start_post_transfer(
     principal_mapping: dict[str, str],
     *,
     owner_id: str = "",
+    dry_run: bool = False,
 ) -> str:
     """Launch post-transfer reconfiguration in the background."""
     task_id = str(uuid.uuid4())
@@ -152,10 +153,11 @@ def start_post_transfer(
     thread = threading.Thread(
         target=_run_post_transfer,
         args=(task, access_token, subscription_id, scan_data, rbac_export, principal_mapping),
+        kwargs={"dry_run": dry_run},
         daemon=True,
     )
     thread.start()
-    logger.info("Post-transfer task %s started for subscription %s", task_id, subscription_id)
+    logger.info("Post-transfer task %s started for subscription %s (dry_run=%s)", task_id, subscription_id, dry_run)
     return task_id
 
 
@@ -324,6 +326,7 @@ def _run_post_transfer(
     principal_mapping: dict[str, str],
     *,
     bundle_artifacts: dict[str, Any] | None = None,
+    dry_run: bool = False,
 ) -> None:
     """Execute post-transfer reconfiguration in a background thread."""
     task.status = TaskStatus.RUNNING
@@ -337,6 +340,7 @@ def _run_post_transfer(
             rbac_export=rbac_export,
             principal_mapping=principal_mapping,
             bundle_artifacts=bundle_artifacts or {},
+            dry_run=dry_run,
         )
         task.result = result
         task.status = TaskStatus.COMPLETED

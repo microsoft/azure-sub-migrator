@@ -382,6 +382,7 @@ def api_start_post_transfer():
 
     data = request.get_json(silent=True) or {}
     mapping = data.get("mapping", {})
+    dry_run = data.get("dry_run", False)
 
     # Build inputs from bundle artifacts
     scan_data = bundle_artifacts.get("scan_results", {})
@@ -400,6 +401,7 @@ def api_start_post_transfer():
         rbac_export=rbac_export,
         principal_mapping=mapping,
         owner_id=_get_owner_id(),
+        dry_run=dry_run,
     )
 
     return jsonify({"task_id": task_id})

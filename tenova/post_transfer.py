@@ -36,6 +36,8 @@ def run_post_transfer(
     scan_data: dict[str, Any],
     rbac_export: dict[str, Any] | None,
     principal_mapping: dict[str, str],
+    *,
+    dry_run: bool = False,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Run all post-transfer operations and return a summary.
@@ -51,14 +53,22 @@ def run_post_transfer(
         If None, RBAC restoration is skipped.
     principal_mapping:
         ``{old_principal_id: new_principal_id}`` mapping.
+    dry_run:
+        If True, simulate all operations without calling Azure APIs.
+        Each operation will report what *would* happen with status
+        ``"dry_run"`` instead of actually executing.
 
     Returns
     -------
     Dict with per-operation results and an overall status.
     """
+    if dry_run:
+        logger.info("DRY RUN mode — no Azure APIs will be called")
+
     results: dict[str, Any] = {
         "operations": [],
         "summary": {"total": 0, "succeeded": 0, "failed": 0, "skipped": 0},
+        "dry_run": dry_run,
     }
 
     requires_action = scan_data.get("requires_action", [])
@@ -67,6 +77,7 @@ def run_post_transfer(
     if rbac_export:
         rbac_result = _restore_rbac(
             credential, subscription_id, rbac_export, principal_mapping,
+            dry_run=dry_run,
         )
         results["operations"].append(rbac_result)
 
@@ -75,6 +86,7 @@ def run_post_transfer(
     for kv in kv_resources:
         kv_result = _update_keyvault(
             credential, subscription_id, kv, principal_mapping,
+            dry_run=dry_run,
         )
         results["operations"].append(kv_result)
 
@@ -83,6 +95,7 @@ def run_post_transfer(
     for sql in sql_resources:
         sql_result = _update_sql_admin(
             credential, subscription_id, sql, principal_mapping,
+            dry_run=dry_run,
         )
         results["operations"].append(sql_result)
 
@@ -91,6 +104,7 @@ def run_post_transfer(
     for app in app_resources:
         app_result = _update_app_service_auth(
             credential, subscription_id, app,
+            dry_run=dry_run,
         )
         results["operations"].append(app_result)
 
@@ -101,6 +115,7 @@ def run_post_transfer(
     for mi in mi_resources:
         mi_result = _document_managed_identity(
             credential, subscription_id, mi,
+            dry_run=dry_run,
         )
         results["operations"].append(mi_result)
 
@@ -113,6 +128,7 @@ def run_post_transfer(
     if policy_data:
         policy_result = _restore_policy_assignments(
             credential, subscription_id, policy_data,
+            dry_run=dry_run,
         )
         results["operations"].append(policy_result)
 
@@ -121,6 +137,7 @@ def run_post_transfer(
     if policy_def_data:
         policy_def_result = _restore_policy_definitions(
             credential, subscription_id, policy_def_data,
+            dry_run=dry_run,
         )
         results["operations"].append(policy_def_result)
 
@@ -129,6 +146,7 @@ def run_post_transfer(
     if lock_data:
         lock_result = _restore_resource_locks(
             credential, subscription_id, lock_data,
+            dry_run=dry_run,
         )
         results["operations"].append(lock_result)
 
@@ -138,6 +156,7 @@ def run_post_transfer(
         for vault_snapshot in kv_policy_data["vaults"]:
             kv_result = _restore_keyvault_from_snapshot(
                 credential, subscription_id, vault_snapshot, principal_mapping,
+                dry_run=dry_run,
             )
             results["operations"].append(kv_result)
 
@@ -146,6 +165,7 @@ def run_post_transfer(
     if sami_resources:
         sami_result = _toggle_managed_identities(
             credential, subscription_id, sami_resources,
+            dry_run=dry_run,
         )
         results["operations"].append(sami_result)
 
@@ -156,6 +176,7 @@ def run_post_transfer(
     if storage_resources:
         storage_result = _rotate_storage_keys(
             credential, subscription_id, storage_resources,
+            dry_run=dry_run,
         )
         results["operations"].append(storage_result)
 
@@ -163,7 +184,7 @@ def run_post_transfer(
     for op in results["operations"]:
         results["summary"]["total"] += 1
         status = op.get("status", "failed")
-        if status == "succeeded":
+        if status in ("succeeded", "dry_run"):
             results["summary"]["succeeded"] += 1
         elif status == "skipped":
             results["summary"]["skipped"] += 1
@@ -194,6 +215,8 @@ def _restore_rbac(
     subscription_id: str,
     rbac_export: dict[str, Any],
     principal_mapping: dict[str, str],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Recreate role assignments and custom roles from the RBAC export."""
     op: dict[str, Any] = {
@@ -211,18 +234,19 @@ def _restore_rbac(
         for role in rbac_export.get("custom_roles", []):
             try:
                 role_id = str(uuid.uuid4())
-                client.role_definitions.create_or_update(
-                    scope=f"/subscriptions/{subscription_id}",
-                    role_definition_id=role_id,
-                    role_definition={
-                        "properties": {
-                            "role_name": role["name"],
-                            "description": role.get("description", ""),
-                            "permissions": role.get("permissions", []),
-                            "assignable_scopes": [f"/subscriptions/{subscription_id}"],
-                        }
-                    },
-                )
+                if not dry_run:
+                    client.role_definitions.create_or_update(
+                        scope=f"/subscriptions/{subscription_id}",
+                        role_definition_id=role_id,
+                        role_definition={
+                            "properties": {
+                                "role_name": role["name"],
+                                "description": role.get("description", ""),
+                                "permissions": role.get("permissions", []),
+                                "assignable_scopes": [f"/subscriptions/{subscription_id}"],
+                            }
+                        },
+                    )
                 custom_created += 1
             except Exception as exc:
                 op["details"].append({
@@ -234,25 +258,28 @@ def _restore_rbac(
         # Role assignments
         created = 0
         skipped = 0
+        unmapped = 0
         failed = 0
         for ra in rbac_export.get("role_assignments", []):
             old_pid = ra.get("principal_id", "")
             new_pid = principal_mapping.get(old_pid)
             if not new_pid:
+                unmapped += 1
                 skipped += 1
                 continue
 
             try:
-                client.role_assignments.create(
-                    scope=ra.get("scope", f"/subscriptions/{subscription_id}"),
-                    role_assignment_name=str(uuid.uuid4()),
-                    parameters={
-                        "properties": {
-                            "role_definition_id": ra["role_definition_id"],
-                            "principal_id": new_pid,
-                        }
-                    },
-                )
+                if not dry_run:
+                    client.role_assignments.create(
+                        scope=ra.get("scope", f"/subscriptions/{subscription_id}"),
+                        role_assignment_name=str(uuid.uuid4()),
+                        parameters={
+                            "properties": {
+                                "role_definition_id": ra["role_definition_id"],
+                                "principal_id": new_pid,
+                            }
+                        },
+                    )
                 created += 1
             except Exception as exc:
                 err = str(exc)
@@ -266,17 +293,22 @@ def _restore_rbac(
                         "error": err[:200],
                     })
 
-        op["details"].insert(0, {
+        summary: dict[str, Any] = {
             "action": "Summary",
             "custom_roles_created": custom_created,
             "assignments_created": created,
             "assignments_skipped": skipped,
+            "assignments_unmapped": unmapped,
             "assignments_failed": failed,
-        })
-        op["status"] = "succeeded" if failed == 0 else "partial"
+        }
+        if dry_run:
+            summary["note"] = "Dry run \u2014 no changes made"
+        op["details"].insert(0, summary)
+        op["status"] = "dry_run" if dry_run else ("succeeded" if failed == 0 else "partial")
         logger.info(
-            "RBAC restoration: %d custom roles, %d assignments created, "
+            "RBAC restoration%s: %d custom roles, %d assignments created, "
             "%d skipped, %d failed",
+            " (dry run)" if dry_run else "",
             custom_created, created, skipped, failed,
         )
 
@@ -297,6 +329,8 @@ def _update_keyvault(
     subscription_id: str,
     resource: dict[str, Any],
     principal_mapping: dict[str, str],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Update Key Vault tenant ID and access policies."""
     rg = resource.get("resource_group", "")
@@ -336,23 +370,31 @@ def _update_keyvault(
             })
 
         # Update the vault with new access policies
-        client.vaults.create_or_update(
-            resource_group_name=rg,
-            vault_name=name,
-            parameters={
-                "location": vault.location,
-                "properties": {
-                    "tenantId": str(vault.properties.tenant_id),
-                    "sku": {
-                        "family": "A",
-                        "name": str(vault.properties.sku.name),
+        if not dry_run:
+            client.vaults.create_or_update(
+                resource_group_name=rg,
+                vault_name=name,
+                parameters={
+                    "location": vault.location,
+                    "properties": {
+                        "tenantId": str(vault.properties.tenant_id),
+                        "sku": {
+                            "family": "A",
+                            "name": str(vault.properties.sku.name),
+                        },
+                        "accessPolicies": new_policies,
                     },
-                    "accessPolicies": new_policies,
                 },
-            },
-        )
-        op["status"] = "succeeded"
-        logger.info("Key Vault '%s' access policies updated (%d policies)", name, len(new_policies))
+            )
+        if dry_run:
+            op["details"].append({
+                "action": "Summary",
+                "policies_count": len(new_policies),
+                "note": "Dry run \u2014 no changes made",
+            })
+        op["status"] = "dry_run" if dry_run else "succeeded"
+        action = "simulated" if dry_run else "updated"
+        logger.info("Key Vault '%s' access policies %s (%d policies)", name, action, len(new_policies))
 
     except Exception as exc:
         op["status"] = "failed"
@@ -371,6 +413,8 @@ def _update_sql_admin(
     subscription_id: str,
     resource: dict[str, Any],
     principal_mapping: dict[str, str],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Update or document the SQL Server AD admin."""
     rg = resource.get("resource_group", "")
@@ -399,29 +443,34 @@ def _update_sql_admin(
             old_sid = admin.sid
             new_sid = principal_mapping.get(old_sid, "")
             if new_sid:
-                # Update the AD admin with the new principal
-                client.server_azure_ad_administrators.begin_create_or_update(
-                    rg, name, "ActiveDirectory",
-                    parameters={
-                        "administratorType": "ActiveDirectory",
-                        "login": admin.login,
-                        "sid": new_sid,
-                        "tenantId": admin.tenant_id,
-                    },
-                ).result()
+                if not dry_run:
+                    # Update the AD admin with the new principal
+                    client.server_azure_ad_administrators.begin_create_or_update(
+                        rg, name, "ActiveDirectory",
+                        parameters={
+                            "administratorType": "ActiveDirectory",
+                            "login": admin.login,
+                            "sid": new_sid,
+                            "tenantId": admin.tenant_id,
+                        },
+                    ).result()
                 op["details"].append({
-                    "action": f"Updated AD admin {admin.login}: {old_sid} → {new_sid}",
-                    "status": "succeeded",
+                    "action": f"Updated AD admin {admin.login}: {old_sid} \u2192 {new_sid}",
+                    "status": "dry_run" if dry_run else "succeeded",
                 })
             else:
                 op["details"].append({
-                    "action": f"AD admin {admin.login} ({old_sid}): no mapping — manual update needed",
+                    "action": f"AD admin {admin.login} ({old_sid}): no mapping \u2014 manual update needed",
                     "status": "manual",
                 })
 
-        op["status"] = "succeeded" if any(
-            d["status"] == "succeeded" for d in op["details"]
-        ) else "manual"
+        if dry_run:
+            op["details"].append({"action": "Summary", "note": "Dry run \u2014 no changes made"})
+            op["status"] = "dry_run"
+        else:
+            op["status"] = "succeeded" if any(
+                d["status"] == "succeeded" for d in op["details"]
+            ) else "manual"
 
     except Exception as exc:
         op["status"] = "failed"
@@ -439,6 +488,8 @@ def _update_app_service_auth(
     credential: TokenCredential,
     subscription_id: str,
     resource: dict[str, Any],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Document App Service authentication configuration.
 
@@ -487,9 +538,13 @@ def _update_app_service_auth(
                 "status": "skipped",
             })
 
-        op["status"] = "manual" if any(
-            d.get("status") == "manual" for d in op["details"]
-        ) else "skipped"
+        if dry_run:
+            op["details"].append({"action": "Summary", "note": "Dry run \u2014 no changes made"})
+            op["status"] = "dry_run"
+        else:
+            op["status"] = "manual" if any(
+                d.get("status") == "manual" for d in op["details"]
+            ) else "skipped"
 
     except Exception as exc:
         op["status"] = "failed"
@@ -507,6 +562,8 @@ def _document_managed_identity(
     credential: TokenCredential,
     subscription_id: str,
     resource: dict[str, Any],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Document a managed identity's new principal ID.
 
@@ -539,7 +596,11 @@ def _document_managed_identity(
             ),
             "status": "documented",
         })
-        op["status"] = "succeeded"
+        if dry_run:
+            op["details"].append({"action": "Summary", "note": "Dry run \u2014 no changes made"})
+            op["status"] = "dry_run"
+        else:
+            op["status"] = "succeeded"
         logger.info(
             "Managed identity '%s': new principal_id=%s, client_id=%s",
             name, mi.principal_id, mi.client_id,
@@ -561,6 +622,8 @@ def _restore_policy_assignments(
     credential: TokenCredential,
     subscription_id: str,
     policy_data: list[dict[str, Any]],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Recreate policy assignments from pre-transfer export."""
     op: dict[str, Any] = {
@@ -595,11 +658,12 @@ def _restore_policy_assignments(
                 if enforcement:
                     params["enforcement_mode"] = enforcement
 
-                client.policy_assignments.create(
-                    scope=scope,
-                    policy_assignment_name=pa["name"],
-                    parameters=params,
-                )
+                if not dry_run:
+                    client.policy_assignments.create(
+                        scope=scope,
+                        policy_assignment_name=pa["name"],
+                        parameters=params,
+                    )
                 created += 1
             except Exception as exc:
                 err = str(exc)
@@ -613,13 +677,16 @@ def _restore_policy_assignments(
                         "error": err[:200],
                     })
 
-        op["details"].insert(0, {
+        summary_pa: dict[str, Any] = {
             "action": "Summary",
             "assignments_created": created,
             "assignments_failed": failed,
-        })
-        op["status"] = "succeeded" if failed == 0 else "partial"
-        logger.info("Policy assignments: %d created, %d failed", created, failed)
+        }
+        if dry_run:
+            summary_pa["note"] = "Dry run \u2014 no changes made"
+        op["details"].insert(0, summary_pa)
+        op["status"] = "dry_run" if dry_run else ("succeeded" if failed == 0 else "partial")
+        logger.info("Policy assignments%s: %d created, %d failed", " (dry run)" if dry_run else "", created, failed)
 
     except Exception as exc:
         op["status"] = "failed"
@@ -637,6 +704,8 @@ def _restore_policy_definitions(
     credential: TokenCredential,
     subscription_id: str,
     definitions: list[dict[str, Any]],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Recreate custom policy definitions from pre-transfer export."""
     op: dict[str, Any] = {
@@ -653,18 +722,19 @@ def _restore_policy_definitions(
 
         for pd_item in definitions:
             try:
-                client.policy_definitions.create_or_update(
-                    policy_definition_name=pd_item["name"],
-                    parameters={
-                        "policy_type": "Custom",
-                        "mode": pd_item.get("mode", "All"),
-                        "display_name": pd_item.get("display_name", ""),
-                        "description": pd_item.get("description", ""),
-                        "policy_rule": pd_item.get("policy_rule", {}),
-                        "parameters": pd_item.get("parameters", {}),
-                        "metadata": pd_item.get("metadata", {}),
-                    },
-                )
+                if not dry_run:
+                    client.policy_definitions.create_or_update(
+                        policy_definition_name=pd_item["name"],
+                        parameters={
+                            "policy_type": "Custom",
+                            "mode": pd_item.get("mode", "All"),
+                            "display_name": pd_item.get("display_name", ""),
+                            "description": pd_item.get("description", ""),
+                            "policy_rule": pd_item.get("policy_rule", {}),
+                            "parameters": pd_item.get("parameters", {}),
+                            "metadata": pd_item.get("metadata", {}),
+                        },
+                    )
                 created += 1
             except Exception as exc:
                 failed += 1
@@ -674,13 +744,16 @@ def _restore_policy_definitions(
                     "error": str(exc)[:200],
                 })
 
-        op["details"].insert(0, {
+        summary_pd: dict[str, Any] = {
             "action": "Summary",
             "definitions_created": created,
             "definitions_failed": failed,
-        })
-        op["status"] = "succeeded" if failed == 0 else "partial"
-        logger.info("Policy definitions: %d created, %d failed", created, failed)
+        }
+        if dry_run:
+            summary_pd["note"] = "Dry run \u2014 no changes made"
+        op["details"].insert(0, summary_pd)
+        op["status"] = "dry_run" if dry_run else ("succeeded" if failed == 0 else "partial")
+        logger.info("Policy definitions%s: %d created, %d failed", " (dry run)" if dry_run else "", created, failed)
 
     except Exception as exc:
         op["status"] = "failed"
@@ -698,6 +771,8 @@ def _restore_resource_locks(
     credential: TokenCredential,
     subscription_id: str,
     lock_data: list[dict[str, Any]],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Recreate resource locks from pre-transfer export."""
     op: dict[str, Any] = {
@@ -721,17 +796,18 @@ def _restore_resource_locks(
                     params["notes"] = lock["notes"]
 
                 rg = lock.get("resource_group", "")
-                if rg:
-                    client.management_locks.create_or_update_at_resource_group_level(
-                        resource_group_name=rg,
-                        lock_name=lock["name"],
-                        parameters=params,
-                    )
-                else:
-                    client.management_locks.create_or_update_at_subscription_level(
-                        lock_name=lock["name"],
-                        parameters=params,
-                    )
+                if not dry_run:
+                    if rg:
+                        client.management_locks.create_or_update_at_resource_group_level(
+                            resource_group_name=rg,
+                            lock_name=lock["name"],
+                            parameters=params,
+                        )
+                    else:
+                        client.management_locks.create_or_update_at_subscription_level(
+                            lock_name=lock["name"],
+                            parameters=params,
+                        )
                 created += 1
             except Exception as exc:
                 failed += 1
@@ -741,13 +817,16 @@ def _restore_resource_locks(
                     "error": str(exc)[:200],
                 })
 
-        op["details"].insert(0, {
+        summary_lk: dict[str, Any] = {
             "action": "Summary",
             "locks_created": created,
             "locks_failed": failed,
-        })
-        op["status"] = "succeeded" if failed == 0 else "partial"
-        logger.info("Resource locks: %d created, %d failed", created, failed)
+        }
+        if dry_run:
+            summary_lk["note"] = "Dry run \u2014 no changes made"
+        op["details"].insert(0, summary_lk)
+        op["status"] = "dry_run" if dry_run else ("succeeded" if failed == 0 else "partial")
+        logger.info("Resource locks%s: %d created, %d failed", " (dry run)" if dry_run else "", created, failed)
 
     except Exception as exc:
         op["status"] = "failed"
@@ -766,6 +845,8 @@ def _restore_keyvault_from_snapshot(
     subscription_id: str,
     vault_snapshot: dict[str, Any],
     principal_mapping: dict[str, str],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Restore Key Vault access policies using the pre-transfer snapshot."""
     name = vault_snapshot.get("name", "")
@@ -799,23 +880,31 @@ def _restore_keyvault_from_snapshot(
                 "status": "mapped" if new_oid != old_oid else "kept",
             })
 
-        client.vaults.create_or_update(
-            resource_group_name=rg,
-            vault_name=name,
-            parameters={
-                "location": vault_snapshot.get("location", current_vault.location),
-                "properties": {
-                    "tenantId": new_tenant_id,
-                    "sku": {
-                        "family": "A",
-                        "name": vault_snapshot.get("sku", str(current_vault.properties.sku.name)),
+        if not dry_run:
+            client.vaults.create_or_update(
+                resource_group_name=rg,
+                vault_name=name,
+                parameters={
+                    "location": vault_snapshot.get("location", current_vault.location),
+                    "properties": {
+                        "tenantId": new_tenant_id,
+                        "sku": {
+                            "family": "A",
+                            "name": vault_snapshot.get("sku", str(current_vault.properties.sku.name)),
+                        },
+                        "accessPolicies": new_policies,
                     },
-                    "accessPolicies": new_policies,
                 },
-            },
-        )
-        op["status"] = "succeeded"
-        logger.info("Key Vault '%s' restored from bundle (%d policies)", name, len(new_policies))
+            )
+        if dry_run:
+            op["details"].append({
+                "action": "Summary",
+                "policies_count": len(new_policies),
+                "note": "Dry run \u2014 no changes made",
+            })
+        op["status"] = "dry_run" if dry_run else "succeeded"
+        action = "simulated" if dry_run else "restored"
+        logger.info("Key Vault '%s' %s from bundle (%d policies)", name, action, len(new_policies))
 
     except Exception as exc:
         op["status"] = "failed"
@@ -833,6 +922,8 @@ def _toggle_managed_identities(
     credential: TokenCredential,
     subscription_id: str,
     resources: list[dict[str, Any]],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Disable and re-enable system-assigned managed identities.
 
@@ -856,25 +947,26 @@ def _toggle_managed_identities(
             resource_id = r.get("id", "")
             name = r.get("name", "")
             try:
-                # Use generic ARM PATCH to toggle identity
-                # Step 1: Disable
-                client.resources.begin_update_by_id(
-                    resource_id=resource_id,
-                    api_version=_get_api_version(r.get("type", "")),
-                    parameters={"identity": {"type": "None"}},
-                ).result()
+                if not dry_run:
+                    # Use generic ARM PATCH to toggle identity
+                    # Step 1: Disable
+                    client.resources.begin_update_by_id(
+                        resource_id=resource_id,
+                        api_version=_get_api_version(r.get("type", "")),
+                        parameters={"identity": {"type": "None"}},
+                    ).result()
 
-                # Step 2: Re-enable
-                client.resources.begin_update_by_id(
-                    resource_id=resource_id,
-                    api_version=_get_api_version(r.get("type", "")),
-                    parameters={"identity": {"type": "SystemAssigned"}},
-                ).result()
+                    # Step 2: Re-enable
+                    client.resources.begin_update_by_id(
+                        resource_id=resource_id,
+                        api_version=_get_api_version(r.get("type", "")),
+                        parameters={"identity": {"type": "SystemAssigned"}},
+                    ).result()
 
                 toggled += 1
                 op["details"].append({
                     "action": f"Toggled identity on '{name}'",
-                    "status": "succeeded",
+                    "status": "dry_run" if dry_run else "succeeded",
                 })
             except Exception as exc:
                 failed += 1
@@ -884,13 +976,17 @@ def _toggle_managed_identities(
                     "error": str(exc)[:200],
                 })
 
-        op["details"].insert(0, {
+        summary_mi: dict[str, Any] = {
             "action": "Summary",
             "identities_toggled": toggled,
             "identities_failed": failed,
-        })
-        op["status"] = "succeeded" if failed == 0 else "partial"
-        logger.info("Managed identities toggled: %d succeeded, %d failed", toggled, failed)
+        }
+        if dry_run:
+            summary_mi["note"] = "Dry run \u2014 no changes made"
+        op["details"].insert(0, summary_mi)
+        op["status"] = "dry_run" if dry_run else ("succeeded" if failed == 0 else "partial")
+        suffix = " (dry run)" if dry_run else ""
+        logger.info("Managed identities toggled%s: %d succeeded, %d failed", suffix, toggled, failed)
 
     except Exception as exc:
         op["status"] = "failed"
@@ -908,6 +1004,8 @@ def _rotate_storage_keys(
     credential: TokenCredential,
     subscription_id: str,
     storage_resources: list[dict[str, Any]],
+    *,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Rotate access keys on storage accounts to revoke source-tenant access."""
     op: dict[str, Any] = {
@@ -926,20 +1024,21 @@ def _rotate_storage_keys(
             rg = r.get("resource_group", "")
             name = r.get("name", "")
             try:
-                client.storage_accounts.regenerate_key(
-                    resource_group_name=rg,
-                    account_name=name,
-                    regenerate_key={"key_name": "key1"},
-                )
-                client.storage_accounts.regenerate_key(
-                    resource_group_name=rg,
-                    account_name=name,
-                    regenerate_key={"key_name": "key2"},
-                )
+                if not dry_run:
+                    client.storage_accounts.regenerate_key(
+                        resource_group_name=rg,
+                        account_name=name,
+                        regenerate_key={"key_name": "key1"},
+                    )
+                    client.storage_accounts.regenerate_key(
+                        resource_group_name=rg,
+                        account_name=name,
+                        regenerate_key={"key_name": "key2"},
+                    )
                 rotated += 1
                 op["details"].append({
                     "action": f"Rotated keys for '{name}'",
-                    "status": "succeeded",
+                    "status": "dry_run" if dry_run else "succeeded",
                 })
             except Exception as exc:
                 failed += 1
@@ -949,13 +1048,16 @@ def _rotate_storage_keys(
                     "error": str(exc)[:200],
                 })
 
-        op["details"].insert(0, {
+        summary_sk: dict[str, Any] = {
             "action": "Summary",
             "accounts_rotated": rotated,
             "accounts_failed": failed,
-        })
-        op["status"] = "succeeded" if failed == 0 else "partial"
-        logger.info("Storage keys rotated: %d succeeded, %d failed", rotated, failed)
+        }
+        if dry_run:
+            summary_sk["note"] = "Dry run \u2014 no changes made"
+        op["details"].insert(0, summary_sk)
+        op["status"] = "dry_run" if dry_run else ("succeeded" if failed == 0 else "partial")
+        logger.info("Storage keys rotated%s: %d succeeded, %d failed", " (dry run)" if dry_run else "", rotated, failed)
 
     except Exception as exc:
         op["status"] = "failed"

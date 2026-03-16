@@ -357,15 +357,21 @@
           <strong>Step 8: Automated Restoration</strong>
           <div class="text-body-secondary small mt-1">RBAC, policies, locks, Key Vault, managed identities, storage keys.</div>
         </div>
-        <button class="btn btn-warning btn-sm" id="wf-restore-btn" disabled>
-          <i class="bi bi-play-fill me-1"></i>Run Restoration
-        </button>
+        <div class="d-flex align-items-center gap-2">
+          <div class="form-check form-switch me-2" title="Simulate all operations without making any Azure API changes">
+            <input class="form-check-input" type="checkbox" id="wf-dry-run-toggle">
+            <label class="form-check-label small text-body-secondary" for="wf-dry-run-toggle">Dry Run</label>
+          </div>
+          <button class="btn btn-warning btn-sm" id="wf-restore-btn" disabled>
+            <i class="bi bi-play-fill me-1"></i>Run Restoration
+          </button>
+        </div>
       </div>
       <div id="wf-restore-progress" class="mt-3 d-none">
         <div class="progress" style="height: 6px;">
           <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 100%"></div>
         </div>
-        <small class="text-body-secondary">Running post-transfer restoration…</small>
+        <small class="text-body-secondary" id="wf-restore-progress-text">Running post-transfer restoration…</small>
       </div>
       <div id="wf-restore-result" class="mt-3 d-none"></div>
     </div>
@@ -957,11 +963,17 @@ $(function () {
   $('#wf-restore-btn').on('click', function () {
     var $btn = $(this).prop('disabled', true);
     $('#wf-restore-progress').removeClass('d-none');
+    $('#wf-restore-progress-text').text(
+      $('#wf-dry-run-toggle').is(':checked')
+        ? 'Running dry-run simulation…'
+        : 'Running post-transfer restoration…'
+    );
     $('#wf-restore-result').addClass('d-none').empty();
 
     var mapping = wfState.principalMapping || {};
+    var dryRun = $('#wf-dry-run-toggle').is(':checked');
 
-    apiPost('{{ url_for("main.api_start_post_transfer") }}', { mapping: mapping })
+    apiPost('{{ url_for("main.api_start_post_transfer") }}', { mapping: mapping, dry_run: dryRun })
       .done(function (resp) {
         wfState.restoreTaskId = resp.task_id;
         pollTask(resp.task_id, '{{ url_for("main.api_post_transfer_status", task_id="TASK_ID") }}',
@@ -977,9 +989,16 @@ $(function () {
             var result = d.result || {};
             var ops = result.operations || [];
             var summary = result.summary || {};
-            var alertType = (summary.failed || 0) > 0 ? 'warning' : 'success';
-            var html = '<div class="alert alert-' + alertType + ' mb-2">' +
-              '<i class="bi bi-gear me-2"></i><strong>Restoration complete:</strong> ' +
+            var isDryRun = result.dry_run === true;
+            var alertType = isDryRun ? 'info' : ((summary.failed || 0) > 0 ? 'warning' : 'success');
+            var html = '';
+            if (isDryRun) {
+              html += '<div class="alert alert-info border-info mb-2">' +
+                '<i class="bi bi-flask me-2"></i><strong>DRY RUN</strong> — No changes were made to Azure. ' +
+                'Results below show what <em>would</em> happen during a real restoration.</div>';
+            }
+            html += '<div class="alert alert-' + alertType + ' mb-2">' +
+              '<i class="bi bi-gear me-2"></i><strong>Restoration ' + (isDryRun ? 'simulation' : '') + ' complete:</strong> ' +
               (summary.succeeded || 0) + '/' + (summary.total || 0) + ' operations succeeded';
             if (summary.skipped) html += ', ' + summary.skipped + ' skipped';
             if (summary.failed) html += ', ' + summary.failed + ' failed';
@@ -991,6 +1010,7 @@ $(function () {
               ops.forEach(function (op) {
                 var st = op.status || '';
                 var badge = st === 'succeeded' ? 'success'
+                  : st === 'dry_run' ? 'info'
                   : st === 'skipped' ? 'secondary'
                   : st === 'manual' ? 'info'
                   : st === 'partial' ? 'warning' : 'danger';
@@ -1020,8 +1040,12 @@ $(function () {
               html += '</tbody></table>';
             }
             $r.html(html);
-            markDone($('#wf-step-restore'));
-            lockStep($('#wf-step-restore'));
+            if (!isDryRun) {
+              markDone($('#wf-step-restore'));
+              lockStep($('#wf-step-restore'));
+            } else {
+              $btn.prop('disabled', false);  // Allow re-run in real mode
+            }
             // Unlock Phase 4
             unlockStep($('#wf-step-validation'));
           }
