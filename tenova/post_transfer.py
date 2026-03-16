@@ -389,7 +389,7 @@ def _update_keyvault(
                         "tenantId": str(vault.properties.tenant_id),
                         "sku": {
                             "family": "A",
-                            "name": str(vault.properties.sku.name),
+                            "name": vault.properties.sku.name.value,
                         },
                         "accessPolicies": new_policies,
                     },
@@ -901,7 +901,7 @@ def _restore_keyvault_from_snapshot(
                         "tenantId": new_tenant_id,
                         "sku": {
                             "family": "A",
-                            "name": vault_snapshot.get("sku", str(current_vault.properties.sku.name)),
+                            "name": vault_snapshot.get("sku", current_vault.properties.sku.name.value),
                         },
                         "accessPolicies": new_policies,
                     },
