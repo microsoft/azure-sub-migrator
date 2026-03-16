@@ -396,12 +396,11 @@ def _update_keyvault(
                 },
             )
             poller.result()
-        if dry_run:
-            op["details"].append({
-                "action": "Summary",
-                "policies_count": len(new_policies),
-                "note": "Dry run \u2014 no changes made",
-            })
+        op["details"].insert(0, {
+            "action": "Summary",
+            "policies_updated": len(new_policies),
+            "note": "Dry run \u2014 no changes made" if dry_run else None,
+        })
         op["status"] = "dry_run" if dry_run else "succeeded"
         action = "simulated" if dry_run else "updated"
         logger.info("Key Vault '%s' access policies %s (%d policies)", name, action, len(new_policies))
@@ -908,12 +907,11 @@ def _restore_keyvault_from_snapshot(
                 },
             )
             poller.result()
-        if dry_run:
-            op["details"].append({
-                "action": "Summary",
-                "policies_count": len(new_policies),
-                "note": "Dry run \u2014 no changes made",
-            })
+        op["details"].insert(0, {
+            "action": "Summary",
+            "policies_restored": len(new_policies),
+            "note": "Dry run \u2014 no changes made" if dry_run else None,
+        })
         op["status"] = "dry_run" if dry_run else "succeeded"
         action = "simulated" if dry_run else "restored"
         logger.info("Key Vault '%s' %s from bundle (%d policies)", name, action, len(new_policies))

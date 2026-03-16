@@ -1019,17 +1019,19 @@ $(function () {
                 if (op.error) {
                   detail = '<span class="text-danger">' + op.error + '</span>';
                 } else if (op.details && op.details.length > 0) {
-                  var summary = op.details[0];
-                  if (summary && summary.action === 'Summary') {
+                  var first = op.details[0];
+                  if (first && first.action === 'Summary') {
                     var parts = [];
-                    Object.keys(summary).forEach(function (k) {
-                      if (k !== 'action' && k !== 'status') {
-                        parts.push(k.replace(/_/g, ' ') + ': ' + summary[k]);
+                    Object.keys(first).forEach(function (k) {
+                      if (k !== 'action' && k !== 'status' && first[k] != null) {
+                        parts.push(k.replace(/_/g, ' ') + ': ' + first[k]);
                       }
                     });
                     detail = parts.join(', ');
-                  } else if (summary.note) {
-                    detail = summary.note;
+                  } else if (first.note) {
+                    detail = first.note;
+                  } else if (first.action) {
+                    detail = first.action;
                   }
                 }
                 if (!detail) detail = '—';
