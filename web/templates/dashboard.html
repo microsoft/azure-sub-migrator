@@ -792,33 +792,39 @@ $(function () {
         var total = resp.total || wfPrincipals.length;
         var systemCount = resp.system_count || 0;
         var miCount = resp.managed_identity_count || 0;
+        var unknownCount = resp.unknown_count || 0;
         var mappableCount = resp.mappable_count || 0;
         var highCount = 0, medCount = 0, unmatchedCount = 0;
         // Only count mappable principals for auto-match stats
         wfPrincipals.forEach(function (p) {
-          if (p.category === 'system' || p.category === 'managed_identity') return;
+          if (p.category !== 'mappable') return;
           var c = p.suggested_confidence || '';
           if (c === 'high') highCount++;
           else if (c === 'medium' || c === 'low') medCount++;
           else unmatchedCount++;
         });
 
+        var skippedTotal = systemCount + miCount + unknownCount;
         var html = '<div class="alert alert-info mb-2">' +
           '<i class="bi bi-people me-1"></i><strong>' + total +
-          ' principal(s)</strong> found.</div>';
+          ' principal(s)</strong> found — ' + skippedTotal + ' auto-skipped, ' +
+          mappableCount + ' need review.</div>';
 
         // Category breakdown cards
         html += '<div class="row text-center mb-3 g-2">' +
-          '<div class="col-3"><div class="border rounded p-2 border-secondary">' +
+          '<div class="col"><div class="border rounded p-2 border-secondary">' +
             '<div class="fs-4 text-body-secondary fw-bold">' + systemCount + '</div>' +
-            '<small>System (auto-skip)</small></div></div>' +
-          '<div class="col-3"><div class="border rounded p-2 border-secondary">' +
+            '<small>System</small></div></div>' +
+          '<div class="col"><div class="border rounded p-2 border-secondary">' +
             '<div class="fs-4 text-body-secondary fw-bold">' + miCount + '</div>' +
-            '<small>Managed Identity (auto-skip)</small></div></div>' +
-          '<div class="col-3"><div class="border rounded p-2 border-success">' +
+            '<small>Managed ID</small></div></div>' +
+          '<div class="col"><div class="border rounded p-2 border-secondary">' +
+            '<div class="fs-4 text-body-secondary fw-bold">' + unknownCount + '</div>' +
+            '<small>Unknown / Deleted</small></div></div>' +
+          '<div class="col"><div class="border rounded p-2 border-success">' +
             '<div class="fs-4 text-success fw-bold">' + highCount + '</div>' +
-            '<small>Auto-matched (high)</small></div></div>' +
-          '<div class="col-3"><div class="border rounded p-2 border-warning">' +
+            '<small>Auto-matched</small></div></div>' +
+          '<div class="col"><div class="border rounded p-2 border-warning">' +
             '<div class="fs-4 text-warning fw-bold">' + (medCount + unmatchedCount) + '</div>' +
             '<small>Needs Review</small></div></div>' +
           '</div>';
@@ -832,7 +838,7 @@ $(function () {
         html += '<div class="form-check form-switch mb-2">' +
           '<input class="form-check-input" type="checkbox" id="wf-show-all-principals" checked>' +
           '<label class="form-check-label small" for="wf-show-all-principals">' +
-          'Show system &amp; managed identity principals (auto-skipped)</label></div>';
+          'Show auto-skipped principals (system, managed identity, unknown/deleted)</label></div>';
 
         html += '<div class="table-responsive" style="max-height:400px;overflow-y:auto;">' +
           '<table class="table table-sm table-bordered mb-2">' +
@@ -841,7 +847,7 @@ $(function () {
 
         wfPrincipals.forEach(function (p, i) {
           var category = p.category || 'mappable';
-          var isSkippable = (category === 'system' || category === 'managed_identity');
+          var isSkippable = (category === 'system' || category === 'managed_identity' || category === 'unknown');
           var suggested = p.suggested_id || '';
           var suggestedLabel = p.suggested_name || '';
           var confidence = p.suggested_confidence || '';
@@ -852,9 +858,13 @@ $(function () {
 
           if (isSkippable) {
             rowClass = ' class="wf-skippable-row table-secondary text-body-secondary"';
-            catBadge = category === 'system'
-              ? '<span class="badge bg-dark">System</span>'
-              : '<span class="badge bg-info text-dark">Managed ID</span>';
+            if (category === 'system') {
+              catBadge = '<span class="badge bg-dark">System</span>';
+            } else if (category === 'managed_identity') {
+              catBadge = '<span class="badge bg-info text-dark">Managed ID</span>';
+            } else {
+              catBadge = '<span class="badge bg-secondary">Unknown</span>';
+            }
           } else {
             catBadge = '<span class="badge bg-primary">Mappable</span>';
             if (confidence === 'high') {
@@ -946,7 +956,7 @@ $(function () {
           $(this).replaceWith(
             '<div class="alert alert-success py-1 px-2 mb-0 d-inline-block">' +
             '<i class="bi bi-check-circle me-1"></i>' + mapCount + ' / ' + mappableCount +
-            ' mappable principals mapped (' + (systemCount + miCount) + ' auto-skipped)</div>'
+            ' mappable principals mapped (' + skippedTotal + ' auto-skipped)</div>'
           );
         });
       })

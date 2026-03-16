@@ -329,10 +329,6 @@ def api_get_principal_mapping():
         except Exception:
             pass  # resolution is best-effort
 
-    # Phase 1.5: Classify each principal (system / managed_identity / mappable)
-    for p in principals:
-        p["category"] = classify_principal(p)
-
     # Phase 2: Auto-map to target tenant using the target-tenant Graph token
     data = request.get_json(silent=True) or {}
     domain_mapping = data.get("domain_mapping", {})
@@ -355,9 +351,15 @@ def api_get_principal_mapping():
             if best.get("confidence") == "high":
                 auto_mapped += 1
 
+    # Phase 3: Classify after suggestions so the classifier can use
+    # suggested_confidence and match_reason for the AppId-match heuristic
+    for p in principals:
+        p["category"] = classify_principal(p)
+
     # Category counts for the UI summary cards
     system_count = sum(1 for p in principals if p.get("category") == "system")
     mi_count = sum(1 for p in principals if p.get("category") == "managed_identity")
+    unknown_count = sum(1 for p in principals if p.get("category") == "unknown")
     mappable_count = sum(1 for p in principals if p.get("category") == "mappable")
 
     return jsonify({
@@ -367,6 +369,7 @@ def api_get_principal_mapping():
         "total": len(principals),
         "system_count": system_count,
         "managed_identity_count": mi_count,
+        "unknown_count": unknown_count,
         "mappable_count": mappable_count,
     })
 

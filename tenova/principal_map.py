@@ -397,53 +397,82 @@ def classify_principal(principal: dict[str, Any]) -> str:
     """Classify a principal into a mapping category.
 
     Returns one of:
-      - ``"system"``   — 1st-party Microsoft service principal (auto-skip)
+      - ``"system"``   — 1st-party Microsoft / Azure platform SP (auto-skip)
       - ``"managed_identity"`` — user/system managed identity (auto-skip)
+      - ``"unknown"``  — unresolvable SP (display_name is "(unknown)")
       - ``"mappable"`` — user, group, or 3rd-party SP that needs mapping
 
     The classification is stored on the principal dict as ``category``.
+    Call **after** ``suggest_mappings`` so ``suggested_confidence`` and
+    ``match_reason`` are available for the AppId-match heuristic.
     """
     obj_type = (
         principal.get("object_type")
         or principal.get("principal_type")
         or ""
     ).lower()
+    display = (principal.get("display_name") or "").lower()
 
-    # Managed identities — type is usually "ServicePrincipal" but the
-    # principal_type from RBAC is "MSI" or the display name contains
-    # pattern like "(guid)" suffix typical of system-assigned identities.
+    # ── Managed identities ────────────────────────────────────────
     p_type_raw = (principal.get("principal_type") or "").lower()
-    if p_type_raw == "msi" or p_type_raw == "managedidentity":
+    if p_type_raw in ("msi", "managedidentity"):
         return "managed_identity"
 
-    # Check appId against well-known 1st-party list
+    # ── Explicit 1st-party app ID list ────────────────────────────
     app_id = principal.get("app_id", "")
     if app_id and app_id in _FIRST_PARTY_APP_IDS:
         return "system"
 
-    # Service principals with "Microsoft" vendor display names are likely 1st-party
-    display = (principal.get("display_name") or "").lower()
+    # ── Service principal heuristics ──────────────────────────────
     if "serviceprincipal" in obj_type:
-        # Heuristic: display names starting with common MS prefixes
+        # Display-name prefixes that imply Microsoft / Azure platform
         ms_prefixes = (
             "microsoft ", "microsoft.", "azure ", "windows azure",
             "o365 ", "office 365", "graph ", "aad ",
             "cloud infrastructure entitlement",
-            "cdx-", "cdx ",
+            "cdx-", "cdx ", "me-",
         )
         if any(display.startswith(p) for p in ms_prefixes):
             return "system"
 
-        # Catch names containing strong MS-only keywords
+        # Keywords anywhere in the display name
         ms_keywords = (
             "azure active directory", "entra",
             "sharepoint", "exchange online",
             "power bi", "dynamics 365", "teams",
+            # Defender / security operators
+            "defender", "securityoperator", "securityscanner",
+            "storagedatascanner",
+            # Azure platform infra
+            "automanage", "movecollection",
+            "managedenvironments-ar-tenant-connector",
+            "sqlvmandarcsqlserversprotection",
+            # Site Recovery / Backup
+            "-asr-", "site recovery",
         )
         if any(kw in display for kw in ms_keywords):
             return "system"
 
-    # Users and groups always need mapping
+        # Resource-path-style names (e.g. Containers/securityOperators/…)
+        if "/" in display and "securityoperator" in display:
+            return "system"
+
+        # High-confidence AppId match + (unknown) display ⇒ same 1st-party
+        # app exists in both source and target tenants.
+        if (
+            principal.get("suggested_confidence") == "high"
+            and principal.get("match_reason", "").startswith("AppId")
+            and display in ("(unknown)", "")
+        ):
+            return "system"
+
+    # ── Unresolvable principals ───────────────────────────────────
+    # If Graph couldn't resolve the display name, the SP is likely
+    # deleted or from a different tenant — not manually mappable.
+    if display in ("(unknown)", "") and "serviceprincipal" in obj_type:
+        return "unknown"
+
+    # ── Users and groups always need mapping ──────────────────────
     if "user" in obj_type or "group" in obj_type:
         return "mappable"
 
