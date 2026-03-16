@@ -368,6 +368,28 @@ _FIRST_PARTY_APP_IDS: frozenset[str] = frozenset({
     "ca7f3f0b-7d91-482c-8e09-c5d840d0eac5",
     # Azure Kubernetes Service
     "6dae42f8-4368-4678-94ff-3960e28e3630",
+    # Cloud Infrastructure Entitlement Management (CIEM / Permissions Mgmt)
+    "b46c3ac5-9da6-418f-a849-0a07a10b3c6c",
+    # CDX (Microsoft Customer Digital Experiences)
+    "ce933385-9390-45d1-9512-c8d228571571",
+    # SharePoint Online
+    "00000003-0000-0ff1-ce00-000000000000",
+    # Exchange Online
+    "00000002-0000-0ff1-ce00-000000000000",
+    # Azure DevOps
+    "499b84ac-1321-427f-aa17-267ca6975798",
+    # Power BI Service
+    "00000009-0000-0000-c000-000000000000",
+    # Microsoft Teams
+    "cc15fd57-2c6c-4117-a88c-83b1d56b4bbe",
+    # Dynamics 365
+    "00000007-0000-0000-c000-000000000000",
+    # Azure Cosmos DB
+    "a232010e-820c-4083-83bb-3ace5fc29d0b",
+    # Azure Event Hubs
+    "80369ed6-5f11-4dd9-bef3-692475845e77",
+    # Azure Service Bus
+    "80a10ef9-8168-493d-abf9-3297c4ef6e3c",
 })
 
 
@@ -404,10 +426,21 @@ def classify_principal(principal: dict[str, Any]) -> str:
     if "serviceprincipal" in obj_type:
         # Heuristic: display names starting with common MS prefixes
         ms_prefixes = (
-            "microsoft.", "azure ", "windows azure",
+            "microsoft ", "microsoft.", "azure ", "windows azure",
             "o365 ", "office 365", "graph ", "aad ",
+            "cloud infrastructure entitlement",
+            "cdx-", "cdx ",
         )
         if any(display.startswith(p) for p in ms_prefixes):
+            return "system"
+
+        # Catch names containing strong MS-only keywords
+        ms_keywords = (
+            "azure active directory", "entra",
+            "sharepoint", "exchange online",
+            "power bi", "dynamics 365", "teams",
+        )
+        if any(kw in display for kw in ms_keywords):
             return "system"
 
     # Users and groups always need mapping
