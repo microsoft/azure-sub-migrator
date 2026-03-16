@@ -354,14 +354,22 @@ def _update_keyvault(
         for policy in (vault.properties.access_policies or []):
             old_oid = policy.object_id
             new_oid = principal_mapping.get(old_oid, old_oid)
+            # Use .as_dict() to avoid name collision between the
+            # Permissions.keys attribute and the Model.keys() method
+            # that the SDK base class exposes for dict-like access.
+            perms = (
+                policy.permissions.as_dict()
+                if hasattr(policy.permissions, "as_dict")
+                else {}
+            )
             new_policies.append({
                 "tenantId": str(vault.properties.tenant_id),
                 "objectId": new_oid,
                 "permissions": {
-                    "keys": [str(p) for p in (policy.permissions.keys or [])],
-                    "secrets": [str(p) for p in (policy.permissions.secrets or [])],
-                    "certificates": [str(p) for p in (policy.permissions.certificates or [])],
-                    "storage": [str(p) for p in (policy.permissions.storage or [])],
+                    "keys": [str(p) for p in (perms.get("keys") or [])],
+                    "secrets": [str(p) for p in (perms.get("secrets") or [])],
+                    "certificates": [str(p) for p in (perms.get("certificates") or [])],
+                    "storage": [str(p) for p in (perms.get("storage") or [])],
                 },
             })
             op["details"].append({
@@ -370,8 +378,9 @@ def _update_keyvault(
             })
 
         # Update the vault with new access policies
+        # v13+ uses begin_create_or_update (LRO) instead of create_or_update
         if not dry_run:
-            client.vaults.create_or_update(
+            poller = client.vaults.begin_create_or_update(
                 resource_group_name=rg,
                 vault_name=name,
                 parameters={
@@ -386,6 +395,7 @@ def _update_keyvault(
                     },
                 },
             )
+            poller.result()
         if dry_run:
             op["details"].append({
                 "action": "Summary",
@@ -880,8 +890,9 @@ def _restore_keyvault_from_snapshot(
                 "status": "mapped" if new_oid != old_oid else "kept",
             })
 
+        # v13+ uses begin_create_or_update (LRO) instead of create_or_update
         if not dry_run:
-            client.vaults.create_or_update(
+            poller = client.vaults.begin_create_or_update(
                 resource_group_name=rg,
                 vault_name=name,
                 parameters={
@@ -896,6 +907,7 @@ def _restore_keyvault_from_snapshot(
                     },
                 },
             )
+            poller.result()
         if dry_run:
             op["details"].append({
                 "action": "Summary",
