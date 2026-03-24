@@ -474,6 +474,13 @@
               <tbody id="cs-matrix-body"></tbody>
             </table>
           </div>
+          <div class="px-3 py-2 small text-secondary border-top" style="background:rgba(0,0,0,.15)">
+            <i class="bi bi-info-circle me-1"></i>
+            Each cell shows the number of dependencies <strong>from</strong> the row subscription <strong>to</strong> the column subscription.
+            <span class="badge bg-warning text-dark ms-1">N</span> = N dependencies detected &nbsp;·&nbsp;
+            <span class="fw-semibold">0</span> = no dependencies &nbsp;·&nbsp;
+            <span class="fw-semibold">—</span> = same subscription.
+          </div>
         </div>
       </div>
 
@@ -1353,6 +1360,14 @@ $(function () {
     return $opt.length ? $opt.text().trim() : shortSub(sid);
   }
 
+  // Extract just the subscription name (no ID suffix)
+  function subNameOnly(sid) {
+    var full = subDisplayName(sid);
+    // Strip trailing " (xxxxxxxx...)" or " (uuid)" suffix
+    var m = full.match(/^(.+?)\s*\([0-9a-f]{4,}/i);
+    return m ? m[1].trim() : full;
+  }
+
   // Start analysis
   $('#cs-start-btn').on('click', function () {
     var subIds = $('#cs-sub-select').val();
@@ -1416,16 +1431,16 @@ $(function () {
 
     // ── Dependency matrix ──
     var subIds = subs.map(function (s) { return s.subscription_id; });
-    var headHtml = '<tr><th class="table-dark"></th>';
+    var headHtml = '<tr><th class="table-dark" style="min-width:160px">From \ To</th>';
     subIds.forEach(function (sid) {
-      headHtml += '<th class="text-center table-dark" title="' + sid + '">' + shortSub(sid) + '</th>';
+      headHtml += '<th class="text-center table-dark" style="min-width:140px" title="' + sid + '">' + subNameOnly(sid) + '</th>';
     });
     headHtml += '</tr>';
     $('#cs-matrix-head').html(headHtml);
 
     var bodyHtml = '';
     subIds.forEach(function (srcSid) {
-      bodyHtml += '<tr><td class="fw-semibold table-dark" title="' + srcSid + '">' + shortSub(srcSid) + '</td>';
+      bodyHtml += '<tr><td class="fw-semibold table-dark" title="' + srcSid + '">' + subNameOnly(srcSid) + '</td>';
       subIds.forEach(function (tgtSid) {
         if (srcSid === tgtSid) {
           bodyHtml += '<td class="text-center table-secondary">—</td>';
@@ -1473,8 +1488,8 @@ $(function () {
         var srcName = d.source_resource ? d.source_resource.split('/').pop() : '—';
         depsHtml += '<tr>' +
           '<td><span class="badge ' + typeBadge + '">' + d.type + '</span></td>' +
-          '<td title="' + d.source_sub + '">' + shortSub(d.source_sub) + '</td>' +
-          '<td title="' + d.target_sub + '">' + shortSub(d.target_sub) + '</td>' +
+          '<td title="' + d.source_sub + '">' + subNameOnly(d.source_sub) + '</td>' +
+          '<td title="' + d.target_sub + '">' + subNameOnly(d.target_sub) + '</td>' +
           '<td class="text-truncate" style="max-width:250px" title="' + (d.source_resource || '') + '">' + srcName + '</td>' +
           '<td class="small">' + (d.impact || '') + '</td>' +
           '</tr>';
