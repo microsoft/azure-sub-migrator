@@ -162,54 +162,33 @@
   </div>
   <div class="card-body">
 
-    <!-- Step 1: Scan -->
+    <!-- Step 1: Analyze Subscription (Scan + Readiness) -->
     <div class="border rounded p-3 mb-3" id="wf-step-scan">
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <i class="bi bi-search text-primary me-2"></i>
-          <strong>Step 1: Scan Subscription</strong>
-          <div class="text-body-secondary small mt-1">Enumerate all resources and identify tenant-bound dependencies.</div>
+          <strong>Step 1: Analyze Subscription</strong>
+          <div class="text-body-secondary small mt-1">Scan all resources, detect blockers, and assess transfer readiness.</div>
         </div>
         <button class="btn btn-primary btn-sm" id="wf-scan-btn" disabled>
-          <i class="bi bi-play-fill me-1"></i>Run Scan
+          <i class="bi bi-play-fill me-1"></i>Analyze
         </button>
       </div>
       <div id="wf-scan-progress" class="mt-3 d-none">
         <div class="progress" style="height: 6px;">
           <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
         </div>
-        <small class="text-body-secondary">Scanning resources…</small>
+        <small class="text-body-secondary">Scanning resources &amp; checking readiness…</small>
       </div>
       <div id="wf-scan-result" class="mt-3 d-none"></div>
     </div>
 
-    <!-- Step 2: Readiness Check -->
-    <div class="border rounded p-3 mb-3 opacity-50" id="wf-step-readiness">
-      <div class="d-flex align-items-center justify-content-between">
-        <div>
-          <i class="bi bi-shield-check text-warning me-2"></i>
-          <strong>Step 2: Readiness Check</strong>
-          <div class="text-body-secondary small mt-1">Detect blockers (AKS, Databricks, SQL with Entra auth, etc.).</div>
-        </div>
-        <button class="btn btn-warning btn-sm" id="wf-readiness-btn" disabled>
-          <i class="bi bi-clipboard-check me-1"></i>Run Check
-        </button>
-      </div>
-      <div id="wf-readiness-progress" class="mt-3 d-none">
-        <div class="progress" style="height: 6px;">
-          <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 100%"></div>
-        </div>
-        <small class="text-body-secondary">Checking readiness…</small>
-      </div>
-      <div id="wf-readiness-result" class="mt-3 d-none"></div>
-    </div>
-
-    <!-- Step 3: Pre-Transfer Export -->
+    <!-- Step 2: Pre-Transfer Export -->
     <div class="border rounded p-3 mb-3 opacity-50" id="wf-step-export">
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <i class="bi bi-box-arrow-down text-info me-2"></i>
-          <strong>Step 3: Export Pre-Transfer Artifacts</strong>
+          <strong>Step 2: Export Pre-Transfer Artifacts</strong>
           <div class="text-body-secondary small mt-1">Automated export of RBAC, policies, locks, Key Vault access policies, managed identities.</div>
         </div>
         <button class="btn btn-info btn-sm" id="wf-export-btn" disabled>
@@ -225,12 +204,12 @@
       <div id="wf-export-result" class="mt-3 d-none"></div>
     </div>
 
-    <!-- Step 4: Download Bundle -->
+    <!-- Step 3: Download Bundle -->
     <div class="border rounded p-3 opacity-50" id="wf-step-bundle">
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <i class="bi bi-file-earmark-zip text-success me-2"></i>
-          <strong>Step 4: Download Migration Bundle</strong>
+          <strong>Step 3: Download Migration Bundle</strong>
           <div class="text-body-secondary small mt-1">Save the .zip bundle — you'll upload it after the transfer.</div>
         </div>
         <a class="btn btn-success btn-sm disabled" id="wf-download-btn" href="#">
@@ -275,12 +254,12 @@
   </div>
   <div class="card-body">
 
-    <!-- Step 5: Upload Bundle -->
+    <!-- Step 4: Upload Bundle -->
     <div class="border rounded p-3 mb-3" id="wf-step-upload">
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <i class="bi bi-box-arrow-in-up text-warning me-2"></i>
-          <strong>Step 5: Upload Migration Bundle</strong>
+          <strong>Step 4: Upload Migration Bundle</strong>
           <div class="text-body-secondary small mt-1">Upload the .zip from Phase 1 to restore artifacts.</div>
         </div>
         {% if has_bundle %}
@@ -295,12 +274,12 @@
       </div>
     </div>
 
-    <!-- Step 6: Connect to Target Tenant -->
+    <!-- Step 5: Connect to Target Tenant -->
     <div class="border rounded p-3 mb-3 {{ '' if has_bundle else 'opacity-50' }}" id="wf-step-target">
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <i class="bi bi-building-add text-warning me-2"></i>
-          <strong>Step 6: Connect to Target Tenant</strong>
+          <strong>Step 5: Connect to Target Tenant</strong>
           <div class="text-body-secondary small mt-1">Authenticate in the destination tenant so Tenova can read its directory for auto-mapping.</div>
         </div>
         {% if target_tenant_connected %}
@@ -328,12 +307,12 @@
       </div>
     </div>
 
-    <!-- Step 7: Principal Mapping -->
+    <!-- Step 6: Principal Mapping -->
     <div class="border rounded p-3 mb-3 {{ '' if target_tenant_connected else 'opacity-50' }}" id="wf-step-mapping">
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <i class="bi bi-people text-warning me-2"></i>
-          <strong>Step 7: Principal Mapping</strong>
+          <strong>Step 6: Principal Mapping</strong>
           <div class="text-body-secondary small mt-1">Map source-tenant principals to target tenant equivalents.</div>
         </div>
         <button class="btn btn-warning btn-sm" id="wf-mapping-btn" {{ '' if target_tenant_connected else 'disabled' }}>
@@ -349,12 +328,12 @@
       <div id="wf-mapping-result" class="mt-3 d-none"></div>
     </div>
 
-    <!-- Step 8: Run Restoration -->
+    <!-- Step 7: Run Restoration -->
     <div class="border rounded p-3 opacity-50" id="wf-step-restore">
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <i class="bi bi-gear text-warning me-2"></i>
-          <strong>Step 8: Automated Restoration</strong>
+          <strong>Step 7: Automated Restoration</strong>
           <div class="text-body-secondary small mt-1">RBAC, policies, locks, Key Vault, managed identities, storage keys.</div>
         </div>
         <div class="d-flex align-items-center gap-2">
@@ -387,12 +366,12 @@
   </div>
   <div class="card-body">
 
-    <!-- Step 9: Validation Scan -->
+    <!-- Step 8: Validation Scan -->
     <div class="border rounded p-3 mb-3 opacity-50" id="wf-step-validation">
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <i class="bi bi-search text-success me-2"></i>
-          <strong>Step 9: Validation Scan</strong>
+          <strong>Step 8: Validation Scan</strong>
           <div class="text-body-secondary small mt-1">Re-scan in the target tenant to verify resources are operational.</div>
         </div>
         <button class="btn btn-success btn-sm" id="wf-validation-btn" disabled>
@@ -408,12 +387,12 @@
       <div id="wf-validation-result" class="mt-3 d-none"></div>
     </div>
 
-    <!-- Step 10: Close Maintenance Window -->
+    <!-- Step 9: Close Maintenance Window -->
     <div class="border rounded p-3 opacity-50" id="wf-step-close">
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <i class="bi bi-check2-all text-success me-2"></i>
-          <strong>Step 10: Migration Complete</strong>
+          <strong>Step 9: Migration Complete</strong>
           <div class="text-body-secondary small mt-1">Confirm migration complete, notify stakeholders, close maintenance window.</div>
         </div>
         <span class="badge bg-secondary" id="wf-close-badge">Pending</span>
@@ -514,7 +493,7 @@ $(function () {
     $step.find('a.btn').addClass('disabled');
   }
 
-  // ── Step 1: SCAN ───────────────────────────────────────────────
+  // ── Step 1: ANALYZE SUBSCRIPTION (scan + readiness) ─────────────
   $scanBtn.on('click', function () {
     if (!wfState.subId) return;
     var $btn = $(this);
@@ -532,52 +511,96 @@ $(function () {
             var $r = $('#wf-scan-result').removeClass('d-none');
             if (d.status === 'failed') {
               $r.html('<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>' +
-                (d.error || 'Scan failed') + '</div>');
+                (d.error || 'Analysis failed') + '</div>');
               $btn.prop('disabled', false);
               $subSelect.prop('disabled', false);
               return;
             }
+
+            // ── Readiness verdict ──
+            var rd = d.readiness || {};
+            var blockers = rd.blockers || [];
+            var warnings = rd.warnings || [];
+            var info = rd.info || [];
+            var ready = rd.ready;
+            var verdictType = blockers.length > 0 ? 'danger' : (warnings.length > 0 ? 'warning' : 'success');
+            var verdictText = ready ? '✅ Ready to transfer' : '⛔ Not ready — fix blockers first';
+
             var safe = d.transfer_safe_count || 0;
-            // Count children like the scan results page does
             var actionList = d.requires_action || [];
             var childCount = 0;
             actionList.forEach(function (r) { childCount += (r.children || []).length; });
             var action = actionList.length + childCount;
-            var html = '<div class="alert alert-' + (action > 0 ? 'warning' : 'success') + ' mb-2">' +
-              '<i class="bi bi-check-circle me-2"></i><strong>Scan complete:</strong> ' +
-              safe + ' transfer-safe, ' + action + ' require action.' +
-              '</div>';
 
-            // Show resource summary table
+            var html = '';
+
+            // Readiness banner
+            html += '<div class="alert alert-' + verdictType + ' mb-2">' +
+              '<i class="bi bi-shield-check me-2"></i><strong>' + verdictText + '</strong> — ' +
+              safe + ' transfer-safe, ' + action + ' require action. ' +
+              blockers.length + ' blocker(s), ' + warnings.length + ' warning(s).</div>';
+
+            // Blockers table
+            if (blockers.length > 0) {
+              html += '<div class="mb-3"><strong class="text-danger">' +
+                '<i class="bi bi-x-octagon me-1"></i>Blockers — must fix before transfer:</strong>' +
+                '<table class="table table-sm table-bordered mt-1 mb-0">' +
+                '<thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action Required</th></tr></thead><tbody>';
+              blockers.forEach(function (b) {
+                html += '<tr class="table-danger"><td>' + (b.name || '') + '</td>' +
+                  '<td><code>' + (b.type || '') + '</code></td>' +
+                  '<td>' + (b.issue || '') + '</td>' +
+                  '<td class="small">' + (b.action || '') + '</td></tr>';
+              });
+              html += '</tbody></table></div>';
+            }
+
+            // Warnings table
+            if (warnings.length > 0) {
+              html += '<div class="mb-3"><strong class="text-warning">' +
+                '<i class="bi bi-exclamation-triangle me-1"></i>Warnings — should fix before transfer:</strong>' +
+                '<table class="table table-sm table-bordered mt-1 mb-0">' +
+                '<thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action Required</th></tr></thead><tbody>';
+              warnings.forEach(function (w) {
+                html += '<tr class="table-warning"><td>' + (w.name || '') + '</td>' +
+                  '<td><code>' + (w.type || '') + '</code></td>' +
+                  '<td>' + (w.issue || '') + '</td>' +
+                  '<td class="small">' + (w.action || '') + '</td></tr>';
+              });
+              html += '</tbody></table></div>';
+            }
+
+            // Full resource table with Pre-Transfer / Post-Transfer columns
             if (actionList.length > 0) {
-              html += '<div class="table-responsive" style="max-height:400px;overflow-y:auto;"><table class="table table-sm table-bordered mb-0">' +
-                '<thead class="sticky-top"><tr><th>Resource</th><th>Type</th><th>Timing</th><th>Action Required</th></tr></thead><tbody>';
+              html += '<div class="mb-2"><strong><i class="bi bi-list-ul me-1"></i>Resources requiring action:</strong></div>';
+              html += '<div class="table-responsive" style="max-height:400px;overflow-y:auto;">' +
+                '<table class="table table-sm table-bordered mb-0">' +
+                '<thead class="sticky-top"><tr><th>Resource</th><th>Type</th><th>Timing</th>' +
+                '<th>Pre-Transfer Action</th><th>Post-Transfer Action</th></tr></thead><tbody>';
               actionList.forEach(function (r) {
-                var timing = (r.timing || 'post').toUpperCase();
-                var timingBadge = timing === 'PRE' ? '<span class="badge bg-danger">PRE</span>'
-                  : timing === 'BOTH' ? '<span class="badge bg-warning text-dark">PRE+POST</span>'
-                  : '<span class="badge bg-info">POST</span>';
-                var actionText = r.pre_action || r.post_action || '—';
-                html += '<tr><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
-                  '</code></td><td>' + timingBadge + '</td><td class="small">' + actionText + '</td></tr>';
-                // Render children inline too
+                html += renderActionRow(r, false);
                 (r.children || []).forEach(function (c) {
-                  var cTiming = (c.timing || 'post').toUpperCase();
-                  var cBadge = cTiming === 'PRE' ? '<span class="badge bg-danger">PRE</span>'
-                    : cTiming === 'BOTH' ? '<span class="badge bg-warning text-dark">PRE+POST</span>'
-                    : '<span class="badge bg-info">POST</span>';
-                  html += '<tr class="table-light"><td class="ps-4"><i class="bi bi-arrow-return-right text-secondary me-1"></i>' +
-                    (c.name || '') + '</td><td><code>' + (c.type || '') +
-                    '</code></td><td>' + cBadge + '</td><td class="small">' + (c.pre_action || c.post_action || '—') + '</td></tr>';
+                  html += renderActionRow(c, true);
                 });
               });
               html += '</tbody></table></div>';
             }
+
+            // Info
+            if (info.length > 0) {
+              html += '<div class="mt-2"><strong class="text-info">' +
+                '<i class="bi bi-info-circle me-1"></i>Info:</strong><ul class="mb-0 mt-1">';
+              info.forEach(function (i) {
+                html += '<li class="small">' +
+                  (i.category ? '<strong>' + i.category + ':</strong> ' : '') +
+                  (i.detail || '') + '</li>';
+              });
+              html += '</ul></div>';
+            }
+
             $r.html(html);
             markDone($('#wf-step-scan'));
             lockStep($('#wf-step-scan'));
-            // Unlock readiness + export
-            unlockStep($('#wf-step-readiness'));
             unlockStep($('#wf-step-export'));
           }
         );
@@ -592,70 +615,28 @@ $(function () {
       });
   });
 
-  // ── Step 2: READINESS CHECK (instant — classifies scan results, no re-scan) ──
-  $('#wf-readiness-btn').on('click', function () {
-    if (!wfState.scanTaskId) {
-      alert('Please run a scan first.');
-      return;
-    }
-    var $btn = $(this).prop('disabled', true);
-    $('#wf-readiness-progress').removeClass('d-none');
-    $('#wf-readiness-result').addClass('d-none').empty();
+  function renderActionRow(r, isChild) {
+    var timing = (r.timing || 'post').toUpperCase();
+    var timingBadge = timing === 'PRE' ? '<span class="badge bg-danger">PRE</span>'
+      : timing === 'BOTH' ? '<span class="badge bg-warning text-dark">PRE+POST</span>'
+      : '<span class="badge bg-info">POST</span>';
+    var pre = r.pre_action || r.pre || '';
+    var post = r.post_action || r.post || '';
+    var docUrl = r.doc_url || '';
+    var docLink = docUrl ? ' <a href="' + docUrl + '" target="_blank" rel="noopener" class="text-info">' +
+      '<i class="bi bi-box-arrow-up-right"></i></a>' : '';
+    var namePrefix = isChild
+      ? '<td class="ps-4"><i class="bi bi-arrow-return-right text-secondary me-1"></i>'
+      : '<td>';
+    var rowClass = isChild ? ' class="table-light"' : '';
+    return '<tr' + rowClass + '>' + namePrefix + (r.name || '') + '</td>' +
+      '<td><code>' + (r.type || '') + '</code></td>' +
+      '<td>' + timingBadge + '</td>' +
+      '<td class="small">' + (pre || '—') + docLink + '</td>' +
+      '<td class="small">' + (post || '—') + '</td></tr>';
+  }
 
-    apiPost('{{ url_for("main.api_classify_readiness") }}', { scan_task_id: wfState.scanTaskId })
-      .done(function (resp) {
-        $('#wf-readiness-progress').addClass('d-none');
-        var $r = $('#wf-readiness-result').removeClass('d-none');
-        var rd = resp.readiness || {};
-        var blockers = rd.blockers || [];
-        var warnings = rd.warnings || [];
-        var info = rd.info || [];
-        var alertType = blockers.length > 0 ? 'danger' : (warnings.length > 0 ? 'warning' : 'success');
-        var readyText = rd.ready ? '✅ Ready to transfer' : '⛔ Not ready — fix blockers first';
-        var html = '<div class="alert alert-' + alertType + ' mb-2">' +
-          '<i class="bi bi-shield-check me-2"></i><strong>' + readyText + '</strong> — ' +
-          blockers.length + ' blocker(s), ' + warnings.length + ' warning(s), ' +
-          info.length + ' info.' + '</div>';
-
-        if (blockers.length > 0) {
-          html += '<div class="mb-2"><strong class="text-danger"><i class="bi bi-x-octagon me-1"></i>Blockers — must fix before transfer:</strong>';
-          html += '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action Required</th></tr></thead><tbody>';
-          blockers.forEach(function (b) {
-            html += '<tr class="table-danger"><td>' + (b.name || '') + '</td><td><code>' + (b.type || '') + '</code></td>' +
-              '<td>' + (b.issue || '') + '</td><td class="small">' + (b.action || '') + '</td></tr>';
-          });
-          html += '</tbody></table></div>';
-        }
-        if (warnings.length > 0) {
-          html += '<div class="mb-2"><strong class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Warnings — should fix before transfer:</strong>';
-          html += '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action Required</th></tr></thead><tbody>';
-          warnings.forEach(function (w) {
-            html += '<tr class="table-warning"><td>' + (w.name || '') + '</td><td><code>' + (w.type || '') + '</code></td>' +
-              '<td>' + (w.issue || '') + '</td><td class="small">' + (w.action || '') + '</td></tr>';
-          });
-          html += '</tbody></table></div>';
-        }
-        if (info.length > 0) {
-          html += '<div class="mb-0"><strong class="text-info"><i class="bi bi-info-circle me-1"></i>Info:</strong><ul class="mb-0 mt-1">';
-          info.forEach(function (i) {
-            html += '<li class="small">' + (i.category ? '<strong>' + i.category + ':</strong> ' : '') + (i.detail || '') + '</li>';
-          });
-          html += '</ul></div>';
-        }
-        $r.html(html);
-        markDone($('#wf-step-readiness'));
-        lockStep($('#wf-step-readiness'));
-      })
-      .fail(function (xhr) {
-        $('#wf-readiness-progress').addClass('d-none');
-        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
-        $('#wf-readiness-result').removeClass('d-none')
-          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
-        $btn.prop('disabled', false);
-      });
-  });
-
-  // ── Step 3: PRE-TRANSFER EXPORT ────────────────────────────────
+  // ── Step 2: PRE-TRANSFER EXPORT ────────────────────────────────
   $('#wf-export-btn').on('click', function () {
     if (!wfState.scanTaskId) {
       alert('Please run a scan first.');
@@ -713,7 +694,7 @@ $(function () {
       });
   });
 
-  // ── Step 6: CONNECT TO TARGET TENANT ─────────────────────────────
+  // ── Step 5: CONNECT TO TARGET TENANT ─────────────────────────────
   {% if target_tenant_connected %}
     // Already connected — mark step as done and lock it
     markDone($('#wf-step-target'));
@@ -743,7 +724,7 @@ $(function () {
     $form.submit();
   });
 
-  // ── Step 7: PRINCIPAL MAPPING (Sharegate-style auto-mapping) ────
+  // ── Step 6: PRINCIPAL MAPPING (Sharegate-style auto-mapping) ────
   var wfPrincipals = [];
 
   $('#wf-mapping-btn').on('click', function () {
@@ -969,7 +950,7 @@ $(function () {
       });
   });
 
-  // ── Step 8: RUN RESTORATION ────────────────────────────────────
+  // ── Step 7: RUN RESTORATION ────────────────────────────────────
   $('#wf-restore-btn').on('click', function () {
     var $btn = $(this).prop('disabled', true);
     $('#wf-restore-progress').removeClass('d-none');
@@ -1072,7 +1053,7 @@ $(function () {
       });
   });
 
-  // ── Step 9: VALIDATION SCAN (with pre/post diff) ────────────────
+  // ── Step 8: VALIDATION SCAN (with pre/post diff) ────────────────
   $('#wf-validation-btn').on('click', function () {
     if (!wfState.subId) {
       alert('No subscription selected.');

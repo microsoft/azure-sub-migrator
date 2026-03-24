@@ -252,15 +252,20 @@ def fetch_subscriptions(access_token: str) -> list[dict[str, str]]:
 # ──────────────────────────────────────────────────────────────────────
 
 def _run_scan(task: TaskResult, access_token: str, subscription_id: str) -> None:
-    """Execute the subscription scan in a background thread."""
+    """Execute the subscription scan + readiness classification in a background thread."""
     task.status = TaskStatus.RUNNING
     task.started_at = datetime.now(timezone.utc)
     try:
         cred = _credential_from_token(access_token)
         report = scan_subscription(cred, subscription_id)
-        task.result = report
+
+        # Auto-classify readiness from the scan results (no extra API calls)
+        from tenova.readiness import classify_readiness
+        readiness = classify_readiness(report)
+
+        task.result = {**report, "readiness": readiness}
         task.status = TaskStatus.COMPLETED
-        logger.info("Scan task %s completed", task.task_id)
+        logger.info("Scan task %s completed (ready=%s)", task.task_id, readiness.get("ready"))
     except Exception as exc:
         task.error = _sanitise_error(exc)
         task.status = TaskStatus.FAILED
