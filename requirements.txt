@@ -1,7 +1,7 @@
 # Core dependencies
 click>=8.1
 azure-identity>=1.15
-azure-mgmt-resource>=23.0,<24.0
+azure-mgmt-resource>=23.0,<26.0
 azure-mgmt-authorization>=4.0
 azure-mgmt-subscription>=3.0
 azure-mgmt-keyvault>=10.0
