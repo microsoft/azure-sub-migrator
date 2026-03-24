@@ -274,10 +274,8 @@ def _restore_rbac(
                         scope=ra.get("scope", f"/subscriptions/{subscription_id}"),
                         role_assignment_name=str(uuid.uuid4()),
                         parameters={
-                            "properties": {
-                                "role_definition_id": ra["role_definition_id"],
-                                "principal_id": new_pid,
-                            }
+                            "role_definition_id": ra["role_definition_id"],
+                            "principal_id": new_pid,
                         },
                     )
                 created += 1
