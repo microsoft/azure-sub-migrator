@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from tenova.cross_sub import (
     _build_matrix,
@@ -42,7 +40,10 @@ class TestFindCrossSubReferences:
             "id": f"/subscriptions/{SUB_A}/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1",
             "name": "vm1",
             "type": "Microsoft.Compute/virtualMachines",
-            "some_property": f"/subscriptions/{SUB_B}/resourceGroups/rg2/providers/Microsoft.Storage/storageAccounts/sa1",
+            "some_property": (
+                f"/subscriptions/{SUB_B}/resourceGroups/rg2"
+                f"/providers/Microsoft.Storage/storageAccounts/sa1"
+            ),
         }
         deps = _find_cross_sub_references(resource, SUB_A, sub_set)
         assert len(deps) == 1

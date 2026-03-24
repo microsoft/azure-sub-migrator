@@ -288,14 +288,21 @@ def _detect_diagnostic_settings(
                         if not target_id:
                             continue
                         match = _SUB_ID_RE.search(target_id)
-                        if match and match.group(1).lower() in sub_set and match.group(1).lower() != subscription_id.lower():
+                        if not match:
+                            continue
+                        found = match.group(1).lower()
+                        if found in sub_set and found != subscription_id.lower():
+                            detail = (
+                                f"'{resource.name}' sends diagnostics to "
+                                f"{target_type} in another subscription"
+                            )
                             deps.append({
                                 "source_sub": subscription_id,
                                 "target_sub": match.group(1),
                                 "type": f"Diagnostic Settings ({target_type})",
                                 "source_resource": resource_id,
                                 "target_resource": target_id,
-                                "detail": f"'{resource.name}' sends diagnostics to {target_type} in another subscription",
+                                "detail": detail,
                                 "impact": "Diagnostic data forwarding will break after transfer",
                             })
             except Exception:
@@ -348,7 +355,13 @@ def _deduplicate(deps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[str] = set()
     unique: list[dict[str, Any]] = []
     for d in deps:
-        key = f"{d['source_sub'].lower()}|{d['target_sub'].lower()}|{d['type']}|{d.get('source_resource', '').lower()}|{d.get('target_resource', '').lower()}"
+        key = (
+            f"{d['source_sub'].lower()}|"
+            f"{d['target_sub'].lower()}|"
+            f"{d['type']}|"
+            f"{d.get('source_resource', '').lower()}|"
+            f"{d.get('target_resource', '').lower()}"
+        )
         if key not in seen:
             seen.add(key)
             unique.append(d)
