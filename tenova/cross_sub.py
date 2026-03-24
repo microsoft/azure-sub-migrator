@@ -2,9 +2,9 @@
 
 Scans multiple Azure subscriptions in parallel and identifies
 dependencies between them — VNet peering, Private Endpoints,
-Private DNS Zone links, diagnostic settings forwarding, and
-generic cross-subscription resource references embedded in
-resource properties.
+Private DNS Zone links, Route Tables / UDRs, diagnostic settings
+forwarding, and generic cross-subscription resource references
+embedded in resource properties.
 
 The result is a lightweight dependency graph that helps operators
 plan the transfer order and understand what will break if a single
@@ -166,6 +166,12 @@ def analyze_cross_sub_dependencies(
             dependencies.extend(deps)
         except Exception as exc:
             logger.warning("Diagnostic settings detection failed for %s: %s", sid, exc)
+
+        try:
+            deps = _detect_route_table_refs(credential, sid, sub_set)
+            dependencies.extend(deps)
+        except Exception as exc:
+            logger.warning("Route table detection failed for %s: %s", sid, exc)
 
     # ── Step 3: Generic cross-sub reference scan via resource IDs ──
     for sid in subscription_ids:
@@ -414,6 +420,95 @@ def _detect_diagnostic_settings(
         logger.warning(
             "azure-mgmt-monitor not installed — "
             "skipping diagnostic settings detection"
+        )
+    return deps
+
+
+def _detect_route_table_refs(
+    credential: TokenCredential,
+    subscription_id: str,
+    sub_set: set[str],
+) -> list[dict[str, Any]]:
+    """Detect Route Tables / UDRs with cross-subscription references.
+
+    Checks two things per route table:
+
+    1. **Subnet associations** — the route table's ``subnets`` property
+       lists the subnets that use it; if a subnet lives in another
+       subscription, that is a cross-sub dependency.
+    2. **Route entries** — a route with ``next_hop_type`` equal to
+       ``VirtualAppliance`` has a ``next_hop_ip_address``.  We cannot
+       resolve an IP to a subscription, but we flag it as a *potential*
+       cross-sub dependency for manual review.  Additionally, routes
+       may reference ARM resource IDs (e.g. Virtual Network Gateway)
+       in another subscription.
+    """
+    deps: list[dict[str, Any]] = []
+    try:
+        from azure.mgmt.network import NetworkManagementClient
+        client = NetworkManagementClient(credential, subscription_id)
+
+        for rt in client.route_tables.list_all():
+            rt_id = rt.id or ""
+
+            # 1. Check subnet associations for cross-sub refs
+            for subnet in (rt.subnets or []):
+                _check_and_append(
+                    deps, subscription_id, sub_set,
+                    subnet.id or "", "Route Table (Subnet)",
+                    rt_id,
+                    f"Route table '{rt.name}' is associated with"
+                    f" a subnet in another subscription",
+                    "Route table association will be lost after"
+                    " transfer if subscriptions are in different"
+                    " tenants",
+                )
+
+            # 2. Check individual routes
+            for route in (rt.routes or []):
+                # 2a. VirtualAppliance next-hop — IP-based, flag for review
+                if (
+                    route.next_hop_type
+                    and route.next_hop_type.lower() == "virtualappliance"
+                    and route.next_hop_ip_address
+                ):
+                    # We can't resolve IP → sub, so we just warn
+                    deps.append({
+                        "source_sub": subscription_id,
+                        "target_sub": subscription_id,  # placeholder
+                        "type": "Route Table (NVA)",
+                        "source_resource": rt_id,
+                        "target_resource": route.next_hop_ip_address,
+                        "detail": (
+                            f"Route '{route.name}' in table"
+                            f" '{rt.name}' forwards traffic to"
+                            f" NVA IP {route.next_hop_ip_address}"
+                        ),
+                        "impact": (
+                            "If the NVA lives in another subscription,"
+                            " routing will break after transfer —"
+                            " verify manually"
+                        ),
+                    })
+
+                # 2b. Scan route address prefix / next-hop for ARM IDs
+                for field in (
+                    route.next_hop_ip_address or "",
+                    getattr(route, "address_prefix", "") or "",
+                ):
+                    _check_and_append(
+                        deps, subscription_id, sub_set,
+                        field, "Route Table (Route)",
+                        rt_id,
+                        f"Route '{route.name}' in table"
+                        f" '{rt.name}' references resource in"
+                        f" another subscription",
+                        "Route entry may break after transfer",
+                    )
+    except ImportError:
+        logger.warning(
+            "azure-mgmt-network not installed — "
+            "skipping Route Table detection"
         )
     return deps
 

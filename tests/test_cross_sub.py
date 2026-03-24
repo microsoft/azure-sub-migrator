@@ -178,6 +178,7 @@ class TestSuggestOrder:
 class TestAnalyzeCrossSubDependencies:
     """Integration test of the full analysis flow (all SDK calls mocked)."""
 
+    @patch("tenova.cross_sub._detect_route_table_refs", return_value=[])
     @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
     @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
     @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
@@ -187,7 +188,7 @@ class TestAnalyzeCrossSubDependencies:
     @patch("tenova.cross_sub.scan_subscription")
     def test_detects_vnet_peering_dependency(
         self, mock_scan, mock_vnet, mock_pe, mock_dns,
-        mock_nsg, mock_lb, mock_diag, mock_credential
+        mock_nsg, mock_lb, mock_diag, mock_rt, mock_credential
     ):
         # Scan returns resources with cross-sub references
         mock_scan.side_effect = lambda cred, sid: {
@@ -218,6 +219,7 @@ class TestAnalyzeCrossSubDependencies:
         assert len(result["subscriptions"]) == 2
         assert result["suggested_order"][0] == SUB_B  # depended upon
 
+    @patch("tenova.cross_sub._detect_route_table_refs", return_value=[])
     @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
     @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
     @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
@@ -227,7 +229,7 @@ class TestAnalyzeCrossSubDependencies:
     @patch("tenova.cross_sub.scan_subscription")
     def test_no_dependencies(
         self, mock_scan, mock_vnet, mock_pe, mock_dns,
-        mock_nsg, mock_lb, mock_diag, mock_credential
+        mock_nsg, mock_lb, mock_diag, mock_rt, mock_credential
     ):
         mock_scan.return_value = {"transfer_safe": [{"id": "x"}], "requires_action": []}
 
@@ -238,6 +240,7 @@ class TestAnalyzeCrossSubDependencies:
         for s in result["subscriptions"]:
             assert s["total_dependencies"] == 0
 
+    @patch("tenova.cross_sub._detect_route_table_refs", return_value=[])
     @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
     @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
     @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
@@ -247,7 +250,7 @@ class TestAnalyzeCrossSubDependencies:
     @patch("tenova.cross_sub.scan_subscription")
     def test_scan_failure_for_one_sub_does_not_block(
         self, mock_scan, mock_vnet, mock_pe, mock_dns,
-        mock_nsg, mock_lb, mock_diag, mock_credential
+        mock_nsg, mock_lb, mock_diag, mock_rt, mock_credential
     ):
         """If one sub scan fails, the others should still succeed."""
         def side_effect(cred, sid):
@@ -264,6 +267,7 @@ class TestAnalyzeCrossSubDependencies:
         sub_a = next(s for s in result["subscriptions"] if s["subscription_id"] == SUB_A)
         assert sub_a["error"] is not None
 
+    @patch("tenova.cross_sub._detect_route_table_refs", return_value=[])
     @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
     @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
     @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
@@ -273,7 +277,7 @@ class TestAnalyzeCrossSubDependencies:
     @patch("tenova.cross_sub.scan_subscription")
     def test_three_subs_with_chain(
         self, mock_scan, mock_vnet, mock_pe, mock_dns,
-        mock_nsg, mock_lb, mock_diag, mock_credential
+        mock_nsg, mock_lb, mock_diag, mock_rt, mock_credential
     ):
         """A → B → C chain should suggest C first (most depended on indirectly)."""
         mock_scan.return_value = {"transfer_safe": [], "requires_action": []}
@@ -339,3 +343,135 @@ class TestCheckAndAppend:
             "Test", "/source", "detail", "impact",
         )
         assert len(deps) == 0
+
+
+class TestDetectRouteTableRefs:
+    """Tests for the Route Table / UDR cross-sub detector."""
+
+    @staticmethod
+    def _make_mock_network_module(mock_client):
+        """Create a mock azure.mgmt.network module returning *mock_client*."""
+        from types import ModuleType
+        from unittest.mock import MagicMock
+
+        mod = ModuleType("azure.mgmt.network")
+        mod.NetworkManagementClient = MagicMock(return_value=mock_client)
+        return mod
+
+    def test_detects_cross_sub_subnet_association(self):
+        """Route table associated with a subnet in another subscription."""
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        from tenova.cross_sub import _detect_route_table_refs
+
+        sub_set = {SUB_A.lower(), SUB_B.lower()}
+        subnet = SimpleNamespace(
+            id=f"/subscriptions/{SUB_B}/resourceGroups/rg/providers/"
+               f"Microsoft.Network/virtualNetworks/vnet/subnets/sn"
+        )
+        rt = SimpleNamespace(
+            id=f"/subscriptions/{SUB_A}/resourceGroups/rg/providers/"
+               f"Microsoft.Network/routeTables/rt1",
+            name="rt1",
+            subnets=[subnet],
+            routes=[],
+        )
+
+        mock_client = MagicMock()
+        mock_client.route_tables.list_all.return_value = [rt]
+        mock_mod = self._make_mock_network_module(mock_client)
+
+        with patch.dict(sys.modules, {"azure.mgmt.network": mock_mod}):
+            deps = _detect_route_table_refs(MagicMock(), SUB_A, sub_set)
+
+        assert len(deps) == 1
+        assert deps[0]["type"] == "Route Table (Subnet)"
+        assert deps[0]["source_sub"] == SUB_A
+        assert deps[0]["target_sub"].lower() == SUB_B.lower()
+
+    def test_detects_nva_virtual_appliance_route(self):
+        """Route with VirtualAppliance next-hop is flagged for review."""
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        from tenova.cross_sub import _detect_route_table_refs
+
+        sub_set = {SUB_A.lower(), SUB_B.lower()}
+        route = SimpleNamespace(
+            name="to-nva",
+            next_hop_type="VirtualAppliance",
+            next_hop_ip_address="10.0.1.4",
+            address_prefix="0.0.0.0/0",
+        )
+        rt = SimpleNamespace(
+            id=f"/subscriptions/{SUB_A}/resourceGroups/rg/providers/"
+               f"Microsoft.Network/routeTables/rt1",
+            name="rt1",
+            subnets=[],
+            routes=[route],
+        )
+
+        mock_client = MagicMock()
+        mock_client.route_tables.list_all.return_value = [rt]
+        mock_mod = self._make_mock_network_module(mock_client)
+
+        with patch.dict(sys.modules, {"azure.mgmt.network": mock_mod}):
+            deps = _detect_route_table_refs(MagicMock(), SUB_A, sub_set)
+
+        assert len(deps) == 1
+        assert deps[0]["type"] == "Route Table (NVA)"
+        assert "10.0.1.4" in deps[0]["detail"]
+
+    def test_no_cross_sub_routes(self):
+        """Route table with only local routes produces no deps."""
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        from tenova.cross_sub import _detect_route_table_refs
+
+        sub_set = {SUB_A.lower(), SUB_B.lower()}
+        route = SimpleNamespace(
+            name="local",
+            next_hop_type="VnetLocal",
+            next_hop_ip_address=None,
+            address_prefix="10.0.0.0/16",
+        )
+        subnet = SimpleNamespace(
+            id=f"/subscriptions/{SUB_A}/resourceGroups/rg/providers/"
+               f"Microsoft.Network/virtualNetworks/vnet/subnets/sn"
+        )
+        rt = SimpleNamespace(
+            id=f"/subscriptions/{SUB_A}/resourceGroups/rg/providers/"
+               f"Microsoft.Network/routeTables/rt1",
+            name="rt1",
+            subnets=[subnet],
+            routes=[route],
+        )
+
+        mock_client = MagicMock()
+        mock_client.route_tables.list_all.return_value = [rt]
+        mock_mod = self._make_mock_network_module(mock_client)
+
+        with patch.dict(sys.modules, {"azure.mgmt.network": mock_mod}):
+            deps = _detect_route_table_refs(MagicMock(), SUB_A, sub_set)
+
+        assert len(deps) == 0
+
+    def test_handles_import_error_gracefully(self):
+        """Missing azure-mgmt-network doesn't crash."""
+        import sys
+        from unittest.mock import MagicMock
+
+        from tenova.cross_sub import _detect_route_table_refs
+
+        sub_set = {SUB_A.lower(), SUB_B.lower()}
+
+        # Setting a module to None in sys.modules forces ImportError on import
+        with patch.dict(sys.modules, {"azure.mgmt.network": None}):
+            deps = _detect_route_table_refs(MagicMock(), SUB_A, sub_set)
+
+        assert deps == []
