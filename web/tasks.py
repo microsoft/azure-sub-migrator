@@ -27,6 +27,7 @@ from typing import Any
 from azure.core.credentials import AccessToken, TokenCredential
 
 from tenova.logger import get_logger
+from tenova.cross_sub import analyze_cross_sub_dependencies
 from tenova.post_transfer import run_post_transfer
 from tenova.pre_transfer import run_pre_transfer
 from tenova.rbac import export_rbac
@@ -158,6 +159,30 @@ def start_post_transfer(
     )
     thread.start()
     logger.info("Post-transfer task %s started for subscription %s (dry_run=%s)", task_id, subscription_id, dry_run)
+    return task_id
+
+
+def start_cross_sub_analysis(
+    access_token: str,
+    subscription_ids: list[str],
+    *,
+    owner_id: str = "",
+) -> str:
+    """Launch a cross-subscription dependency analysis in the background."""
+    task_id = str(uuid.uuid4())
+    task = TaskResult(task_id=task_id, task_type="cross_sub", owner_id=owner_id)
+    _store_task(task)
+
+    thread = threading.Thread(
+        target=_run_cross_sub_analysis,
+        args=(task, access_token, subscription_ids),
+        daemon=True,
+    )
+    thread.start()
+    logger.info(
+        "Cross-sub analysis task %s started for %d subscriptions",
+        task_id, len(subscription_ids),
+    )
     return task_id
 
 
@@ -381,6 +406,32 @@ def _run_pre_transfer(
         task.error = _sanitise_error(exc)
         task.status = TaskStatus.FAILED
         logger.exception("Pre-transfer task %s failed", task.task_id)
+    finally:
+        task.completed_at = datetime.now(timezone.utc)
+
+
+def _run_cross_sub_analysis(
+    task: TaskResult,
+    access_token: str,
+    subscription_ids: list[str],
+) -> None:
+    """Execute cross-subscription dependency analysis in a background thread."""
+    task.status = TaskStatus.RUNNING
+    task.started_at = datetime.now(timezone.utc)
+    try:
+        cred = _credential_from_token(access_token)
+        result = analyze_cross_sub_dependencies(cred, subscription_ids)
+        task.result = result
+        task.status = TaskStatus.COMPLETED
+        logger.info(
+            "Cross-sub analysis task %s completed: %d dependencies found",
+            task.task_id,
+            len(result.get("dependencies", [])),
+        )
+    except Exception as exc:
+        task.error = _sanitise_error(exc)
+        task.status = TaskStatus.FAILED
+        logger.exception("Cross-sub analysis task %s failed", task.task_id)
     finally:
         task.completed_at = datetime.now(timezone.utc)
 

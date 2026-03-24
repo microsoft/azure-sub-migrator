@@ -45,6 +45,12 @@
       <i class="bi bi-arrow-left-right me-1"></i>Migration Workflow
     </button>
   </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="crosssub-tab" data-bs-toggle="pill"
+            data-bs-target="#crosssub-pane" type="button" role="tab">
+      <i class="bi bi-diagram-3 me-1"></i>Cross-Sub Dependencies
+    </button>
+  </li>
 </ul>
 
 {% if error %}
@@ -403,6 +409,113 @@
 </div>
 
 </div><!-- end workflow-pane -->
+
+<!-- ═══════════════════════════════════════ CROSS-SUB DEPENDENCIES TAB ═══ -->
+<div class="tab-pane fade" id="crosssub-pane" role="tabpanel" tabindex="0">
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">
+    <i class="bi bi-diagram-3 me-2"></i>Cross-Subscription Dependency Analysis
+  </div>
+  <div class="card-body">
+    <p class="text-secondary mb-3">
+      Select two or more subscriptions to scan for cross-subscription dependencies — VNet peering,
+      private endpoints, DNS zone links, diagnostic settings, and embedded resource references.
+    </p>
+
+    <!-- Multi-select subscription picker -->
+    <div class="row g-3 mb-3">
+      <div class="col-md-8">
+        <label for="cs-sub-select" class="form-label fw-semibold">
+          <i class="bi bi-collection me-1"></i>Select subscriptions to analyze
+        </label>
+        <select id="cs-sub-select" class="form-select" multiple size="5">
+          {% for sub in subscriptions %}
+          <option value="{{ sub.subscription_id }}">
+            {{ sub.display_name }} ({{ sub.subscription_id[:8] }}…)
+          </option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Hold <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> to select multiple.</div>
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <button id="cs-start-btn" class="btn btn-primary w-100" disabled>
+          <i class="bi bi-diagram-3 me-1"></i>Analyze Dependencies
+        </button>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div id="cs-progress" class="d-none mb-3">
+      <div class="d-flex align-items-center">
+        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+        <span>Scanning subscriptions and detecting dependencies…</span>
+      </div>
+      <div class="progress mt-2" style="height: 4px;">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="cs-results" class="d-none">
+
+      <!-- Summary cards -->
+      <div class="row g-3 mb-4" id="cs-summary-cards"></div>
+
+      <!-- Dependency matrix -->
+      <div class="card mb-4" id="cs-matrix-card">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-grid-3x3 me-1"></i>Dependency Matrix
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0" id="cs-matrix-table">
+              <thead id="cs-matrix-head"></thead>
+              <tbody id="cs-matrix-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Suggested transfer order -->
+      <div class="card mb-4" id="cs-order-card">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-sort-numeric-down me-1"></i>Suggested Transfer Order
+        </div>
+        <div class="card-body">
+          <ol id="cs-order-list" class="mb-0"></ol>
+        </div>
+      </div>
+
+      <!-- Dependency details table -->
+      <div class="card mb-4" id="cs-deps-card">
+        <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-link-45deg me-1"></i>Dependency Details</span>
+          <span id="cs-dep-count" class="badge bg-primary"></span>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="cs-deps-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>From (Source Sub)</th>
+                  <th>To (Target Sub)</th>
+                  <th>Source Resource</th>
+                  <th>Impact</th>
+                </tr>
+              </thead>
+              <tbody id="cs-deps-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end cs-results -->
+  </div>
+</div>
+
+</div><!-- end crosssub-pane -->
 
 </div><!-- end tab-content -->
 {% endblock %}
@@ -1212,6 +1325,164 @@ $(function () {
         $btn.prop('disabled', false);
       });
   });
+
+  // ══════════════════════════════════════════════════════════════════
+  // Cross-Subscription Dependency Analysis
+  // ══════════════════════════════════════════════════════════════════
+
+  // Enable/disable the analyze button based on selection count
+  $('#cs-sub-select').on('change', function () {
+    var count = $(this).val() ? $(this).val().length : 0;
+    $('#cs-start-btn').prop('disabled', count < 2)
+      .html('<i class="bi bi-diagram-3 me-1"></i>Analyze ' + count + ' Subscription' + (count !== 1 ? 's' : ''));
+  });
+
+  // Also support ?tab=crosssub in URL
+  if (urlParams.get('tab') === 'crosssub') {
+    $('#crosssub-tab').tab('show');
+  }
+
+  // Short subscription ID helper
+  function shortSub(sid) {
+    return sid ? sid.substring(0, 8) + '…' : '?';
+  }
+
+  // Find display name for a subscription ID
+  function subDisplayName(sid) {
+    var $opt = $('#cs-sub-select option[value="' + sid + '"]');
+    return $opt.length ? $opt.text().trim() : shortSub(sid);
+  }
+
+  // Start analysis
+  $('#cs-start-btn').on('click', function () {
+    var subIds = $('#cs-sub-select').val();
+    if (!subIds || subIds.length < 2) return;
+
+    var $btn = $(this);
+    $btn.prop('disabled', true);
+    $('#cs-progress').removeClass('d-none');
+    $('#cs-results').addClass('d-none');
+
+    apiPost('/api/start-cross-sub-analysis', { subscription_ids: subIds })
+      .done(function (resp) {
+        // Poll for completion
+        pollTask(resp.task_id, '/api/task/' + resp.task_id, function (data) {
+          // Task completed
+          $('#cs-progress').addClass('d-none');
+          $btn.prop('disabled', false);
+          renderCrossSubResults(data);
+        });
+      })
+      .fail(function (xhr) {
+        $('#cs-progress').addClass('d-none');
+        $btn.prop('disabled', false);
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#cs-results').removeClass('d-none')
+          .html('<div class="alert alert-danger">' + msg + '</div>');
+      });
+  });
+
+  function renderCrossSubResults(data) {
+    var subs = data.subscriptions || [];
+    var deps = data.dependencies || [];
+    var matrix = data.matrix || {};
+    var order = data.suggested_order || [];
+
+    $('#cs-results').removeClass('d-none');
+
+    // ── Summary cards ──
+    var cardsHtml = '';
+    subs.forEach(function (s) {
+      var depBadge = s.total_dependencies > 0
+        ? '<span class="badge bg-warning text-dark">' + s.total_dependencies + ' dependencies</span>'
+        : '<span class="badge bg-success">No dependencies</span>';
+      cardsHtml += '<div class="col-md-4"><div class="card h-100">' +
+        '<div class="card-body">' +
+        '<h6 class="card-title text-truncate" title="' + s.subscription_id + '">' +
+        subDisplayName(s.subscription_id) + '</h6>' +
+        '<div class="d-flex gap-2 flex-wrap">' +
+        '<span class="badge bg-success">' + s.transfer_safe_count + ' safe</span>' +
+        '<span class="badge bg-danger">' + s.requires_action_count + ' need action</span>' +
+        depBadge +
+        '</div>' +
+        '<div class="mt-2 small text-secondary">' +
+        '<i class="bi bi-arrow-up-right me-1"></i>' + s.outgoing_dependencies + ' outgoing · ' +
+        '<i class="bi bi-arrow-down-left me-1"></i>' + s.incoming_dependencies + ' incoming' +
+        '</div>' +
+        (s.error ? '<div class="text-danger small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>' + s.error + '</div>' : '') +
+        '</div></div></div>';
+    });
+    $('#cs-summary-cards').html(cardsHtml);
+
+    // ── Dependency matrix ──
+    var subIds = subs.map(function (s) { return s.subscription_id; });
+    var headHtml = '<tr><th class="bg-light"></th>';
+    subIds.forEach(function (sid) {
+      headHtml += '<th class="text-center bg-light" title="' + sid + '">' + shortSub(sid) + '</th>';
+    });
+    headHtml += '</tr>';
+    $('#cs-matrix-head').html(headHtml);
+
+    var bodyHtml = '';
+    subIds.forEach(function (srcSid) {
+      bodyHtml += '<tr><td class="fw-semibold bg-light" title="' + srcSid + '">' + shortSub(srcSid) + '</td>';
+      subIds.forEach(function (tgtSid) {
+        if (srcSid === tgtSid) {
+          bodyHtml += '<td class="text-center bg-light">—</td>';
+        } else {
+          var count = (matrix[srcSid] && matrix[srcSid][tgtSid]) || 0;
+          var cls = count > 0 ? 'table-warning fw-bold' : '';
+          bodyHtml += '<td class="text-center ' + cls + '">' + count + '</td>';
+        }
+      });
+      bodyHtml += '</tr>';
+    });
+    $('#cs-matrix-body').html(bodyHtml);
+
+    // Hide matrix if only 2 subs (not very useful)
+    $('#cs-matrix-card').toggle(subIds.length > 2);
+
+    // ── Suggested order ──
+    var orderHtml = '';
+    order.forEach(function (sid, idx) {
+      var label = subDisplayName(sid);
+      var badge = idx === 0 ? ' <span class="badge bg-primary">Transfer first</span>' : '';
+      orderHtml += '<li class="mb-1">' + label + badge + '</li>';
+    });
+    $('#cs-order-list').html(orderHtml);
+    $('#cs-order-card').toggle(deps.length > 0);
+
+    // ── Dependency details ──
+    $('#cs-dep-count').text(deps.length + ' dependenc' + (deps.length !== 1 ? 'ies' : 'y'));
+    var depsHtml = '';
+    if (deps.length === 0) {
+      depsHtml = '<tr><td colspan="5" class="text-center text-success py-3">' +
+        '<i class="bi bi-check-circle me-1"></i>No cross-subscription dependencies detected' +
+        '</td></tr>';
+    } else {
+      deps.forEach(function (d) {
+        var typeBadge = '';
+        switch (d.type) {
+          case 'VNet Peering':     typeBadge = 'bg-primary'; break;
+          case 'Private Endpoint': typeBadge = 'bg-info text-dark'; break;
+          case 'Private DNS Link': typeBadge = 'bg-secondary'; break;
+          default:
+            typeBadge = d.type.indexOf('Diagnostic') >= 0 ? 'bg-warning text-dark' : 'bg-dark';
+        }
+        // Extract resource name from ID
+        var srcName = d.source_resource ? d.source_resource.split('/').pop() : '—';
+        depsHtml += '<tr>' +
+          '<td><span class="badge ' + typeBadge + '">' + d.type + '</span></td>' +
+          '<td title="' + d.source_sub + '">' + shortSub(d.source_sub) + '</td>' +
+          '<td title="' + d.target_sub + '">' + shortSub(d.target_sub) + '</td>' +
+          '<td class="text-truncate" style="max-width:250px" title="' + (d.source_resource || '') + '">' + srcName + '</td>' +
+          '<td class="small">' + (d.impact || '') + '</td>' +
+          '</tr>';
+      });
+    }
+    $('#cs-deps-body').html(depsHtml);
+    $('#cs-deps-card').toggle(true);
+  }
 
 });
 </script>

@@ -23,6 +23,7 @@ from web.auth_web import get_access_token, get_graph_token, login_required
 from web.tasks import (
     fetch_subscriptions,
     get_task,
+    start_cross_sub_analysis,
     start_post_transfer,
     start_pre_transfer,
     start_rbac_export,
@@ -168,6 +169,12 @@ def api_task_status(task_id: str):
     # RBAC export results
     elif task.task_type == "rbac_export" and task.result:
         payload["rbac_export"] = task.result.get("rbac_export", {})
+    # Cross-subscription dependency analysis results
+    elif task.task_type == "cross_sub" and task.result:
+        payload["subscriptions"] = task.result.get("subscriptions", [])
+        payload["dependencies"] = task.result.get("dependencies", [])
+        payload["matrix"] = task.result.get("matrix", {})
+        payload["suggested_order"] = task.result.get("suggested_order", [])
 
     if task.error:
         payload["error"] = task.error
@@ -193,6 +200,26 @@ def api_start_scan():
     token = get_access_token()
     task_id = start_scan(token, subscription_id, owner_id=_get_owner_id())
     session["last_scan_sub"] = subscription_id
+    return jsonify({"task_id": task_id})
+
+
+@main_bp.route("/api/start-cross-sub-analysis", methods=["POST"])
+@login_required
+@limiter.limit("5 per minute")
+def api_start_cross_sub_analysis():
+    """Start cross-subscription dependency analysis and return task_id."""
+    data = request.get_json(silent=True) or {}
+    sub_ids = data.get("subscription_ids", [])
+    if not isinstance(sub_ids, list) or len(sub_ids) < 2:
+        return jsonify({"error": "At least two subscription_ids are required"}), 400
+    # Validate each subscription ID
+    for sid in sub_ids:
+        if not isinstance(sid, str) or not _UUID_RE.match(sid.strip()):
+            return jsonify({"error": f"Invalid subscription_id: {sid}"}), 400
+    sub_ids = [s.strip() for s in sub_ids]
+
+    token = get_access_token()
+    task_id = start_cross_sub_analysis(token, sub_ids, owner_id=_get_owner_id())
     return jsonify({"task_id": task_id})
 
 
