@@ -30,6 +30,51 @@ _SUB_ID_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Resource types worth checking for diagnostic settings (keeps API calls
+# bounded instead of iterating *every* resource in the subscription).
+_DIAG_RESOURCE_TYPES: set[str] = {
+    "microsoft.keyvault/vaults",
+    "microsoft.network/networksecuritygroups",
+    "microsoft.network/virtualnetworks",
+    "microsoft.network/applicationgateways",
+    "microsoft.network/azurefirewalls",
+    "microsoft.network/loadbalancers",
+    "microsoft.sql/servers",
+    "microsoft.storage/storageaccounts",
+    "microsoft.containerservice/managedclusters",
+    "microsoft.web/sites",
+    "microsoft.compute/virtualmachines",
+}
+
+
+def _check_and_append(
+    deps: list[dict[str, Any]],
+    subscription_id: str,
+    sub_set: set[str],
+    target_id: str,
+    dep_type: str,
+    source_resource: str,
+    detail: str,
+    impact: str,
+) -> None:
+    """Append a dependency if *target_id* references another sub in *sub_set*."""
+    if not target_id:
+        return
+    match = _SUB_ID_RE.search(target_id)
+    if not match:
+        return
+    found = match.group(1).lower()
+    if found in sub_set and found != subscription_id.lower():
+        deps.append({
+            "source_sub": subscription_id,
+            "target_sub": match.group(1),
+            "type": dep_type,
+            "source_resource": source_resource,
+            "target_resource": target_id,
+            "detail": detail,
+            "impact": impact,
+        })
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Public API
@@ -105,6 +150,18 @@ def analyze_cross_sub_dependencies(
             logger.warning("Private DNS link detection failed for %s: %s", sid, exc)
 
         try:
+            deps = _detect_nsg_references(credential, sid, sub_set)
+            dependencies.extend(deps)
+        except Exception as exc:
+            logger.warning("NSG detection failed for %s: %s", sid, exc)
+
+        try:
+            deps = _detect_load_balancer_refs(credential, sid, sub_set)
+            dependencies.extend(deps)
+        except Exception as exc:
+            logger.warning("Load balancer detection failed for %s: %s", sid, exc)
+
+        try:
             deps = _detect_diagnostic_settings(credential, sid, sub_set)
             dependencies.extend(deps)
         except Exception as exc:
@@ -156,22 +213,45 @@ def _detect_vnet_peering(
         client = NetworkManagementClient(credential, subscription_id)
 
         for vnet in client.virtual_networks.list_all():
-            if not vnet.virtual_network_peerings:
+            # list_all() does NOT populate virtual_network_peerings —
+            # we must call the peerings API explicitly per VNet.
+            vnet_id = vnet.id or ""
+            rg_match = re.search(
+                r"/resourceGroups/([^/]+)/", vnet_id,
+            )
+            if not rg_match or not vnet.name:
                 continue
-            for peering in vnet.virtual_network_peerings:
-                remote_id = peering.remote_virtual_network.id if peering.remote_virtual_network else ""
+            rg = rg_match.group(1)
+            try:
+                peerings = client.virtual_network_peerings.list(
+                    rg, vnet.name,
+                )
+            except Exception:
+                continue
+            for peering in peerings:
+                rv = peering.remote_virtual_network
+                remote_id = rv.id if rv else ""
                 if not remote_id:
                     continue
                 match = _SUB_ID_RE.search(remote_id)
-                if match and match.group(1).lower() in sub_set and match.group(1).lower() != subscription_id.lower():
+                if not match:
+                    continue
+                found = match.group(1).lower()
+                if found in sub_set and found != subscription_id.lower():
                     deps.append({
                         "source_sub": subscription_id,
                         "target_sub": match.group(1),
                         "type": "VNet Peering",
-                        "source_resource": vnet.id,
+                        "source_resource": vnet_id,
                         "target_resource": remote_id,
-                        "detail": f"VNet '{vnet.name}' is peered with '{peering.remote_virtual_network.id}'",
-                        "impact": "Peering will break if subscriptions are in different tenants",
+                        "detail": (
+                            f"VNet '{vnet.name}' is peered with"
+                            f" '{remote_id}'"
+                        ),
+                        "impact": (
+                            "Peering will break if subscriptions"
+                            " are in different tenants"
+                        ),
                     })
     except ImportError:
         logger.warning("azure-mgmt-network not installed — skipping VNet peering detection")
@@ -183,41 +263,60 @@ def _detect_private_endpoints(
     subscription_id: str,
     sub_set: set[str],
 ) -> list[dict[str, Any]]:
-    """Detect Private Endpoints connected to resources in other subscriptions."""
+    """Detect Private Endpoints connected to resources in other subs.
+
+    Checks both the private-link target resource and the subnet/VNet
+    the PE is deployed into, since either can be cross-subscription.
+    """
     deps: list[dict[str, Any]] = []
     try:
         from azure.mgmt.network import NetworkManagementClient
         client = NetworkManagementClient(credential, subscription_id)
 
         for pe in client.private_endpoints.list_by_subscription():
+            pe_id = pe.id or ""
+
+            # Check private link service connections (auto-approved)
             for conn in (pe.private_link_service_connections or []):
                 target_id = conn.private_link_service_id or ""
-                match = _SUB_ID_RE.search(target_id)
-                if match and match.group(1).lower() in sub_set and match.group(1).lower() != subscription_id.lower():
-                    deps.append({
-                        "source_sub": subscription_id,
-                        "target_sub": match.group(1),
-                        "type": "Private Endpoint",
-                        "source_resource": pe.id,
-                        "target_resource": target_id,
-                        "detail": f"Private endpoint '{pe.name}' connects to resource in another subscription",
-                        "impact": "Private link connection may break after transfer",
-                    })
-            for conn in (pe.manual_private_link_service_connections or []):
+                _check_and_append(
+                    deps, subscription_id, sub_set, target_id,
+                    "Private Endpoint", pe_id,
+                    f"PE '{pe.name}' connects to resource "
+                    f"in another subscription",
+                    "Private link connection may break after "
+                    "transfer",
+                )
+
+            # Check manual private link connections
+            for conn in (
+                pe.manual_private_link_service_connections or []
+            ):
                 target_id = conn.private_link_service_id or ""
-                match = _SUB_ID_RE.search(target_id)
-                if match and match.group(1).lower() in sub_set and match.group(1).lower() != subscription_id.lower():
-                    deps.append({
-                        "source_sub": subscription_id,
-                        "target_sub": match.group(1),
-                        "type": "Private Endpoint (Manual)",
-                        "source_resource": pe.id,
-                        "target_resource": target_id,
-                        "detail": f"Private endpoint '{pe.name}' (manual) connects to resource in another subscription",
-                        "impact": "Private link connection may break after transfer",
-                    })
+                _check_and_append(
+                    deps, subscription_id, sub_set, target_id,
+                    "Private Endpoint (Manual)", pe_id,
+                    f"PE '{pe.name}' (manual) connects to "
+                    f"resource in another subscription",
+                    "Private link connection may break after "
+                    "transfer",
+                )
+
+            # Check if the PE's subnet is in another subscription
+            subnet_id = pe.subnet.id if pe.subnet else ""
+            _check_and_append(
+                deps, subscription_id, sub_set, subnet_id,
+                "Private Endpoint (Subnet)", pe_id,
+                f"PE '{pe.name}' is deployed into a subnet "
+                f"in another subscription",
+                "PE will lose connectivity if the VNet sub "
+                "is transferred separately",
+            )
     except ImportError:
-        logger.warning("azure-mgmt-network not installed — skipping Private Endpoint detection")
+        logger.warning(
+            "azure-mgmt-network not installed — "
+            "skipping Private Endpoint detection"
+        )
     return deps
 
 
@@ -263,7 +362,11 @@ def _detect_diagnostic_settings(
     subscription_id: str,
     sub_set: set[str],
 ) -> list[dict[str, Any]]:
-    """Detect diagnostic settings forwarding to workspaces in other subs."""
+    """Detect diagnostic settings forwarding to workspaces in other subs.
+
+    Only checks resource types in ``_DIAG_RESOURCE_TYPES`` to keep
+    the number of API calls bounded (instead of hitting every resource).
+    """
     deps: list[dict[str, Any]] = []
     try:
         from azure.mgmt.monitor import MonitorManagementClient
@@ -272,44 +375,153 @@ def _detect_diagnostic_settings(
         monitor = MonitorManagementClient(credential, subscription_id)
         rm = ResourceManagementClient(credential, subscription_id)
 
-        # Check diagnostic settings on each resource (sample top-level only)
         for resource in rm.resources.list():
+            r_type = (resource.type or "").lower()
+            if r_type not in _DIAG_RESOURCE_TYPES:
+                continue
             resource_id = resource.id or ""
             if not resource_id:
                 continue
             try:
-                for ds in monitor.diagnostic_settings.list(resource_id).value or []:
+                ds_list = monitor.diagnostic_settings.list(
+                    resource_id,
+                )
+                for ds in ds_list.value or []:
                     targets = [
                         ("Log Analytics", ds.workspace_id),
                         ("Storage Account", ds.storage_account_id),
-                        ("Event Hub", ds.event_hub_authorization_rule_id),
+                        (
+                            "Event Hub",
+                            ds.event_hub_authorization_rule_id,
+                        ),
                     ]
                     for target_type, target_id in targets:
-                        if not target_id:
-                            continue
-                        match = _SUB_ID_RE.search(target_id)
-                        if not match:
-                            continue
-                        found = match.group(1).lower()
-                        if found in sub_set and found != subscription_id.lower():
-                            detail = (
-                                f"'{resource.name}' sends diagnostics to "
-                                f"{target_type} in another subscription"
-                            )
-                            deps.append({
-                                "source_sub": subscription_id,
-                                "target_sub": match.group(1),
-                                "type": f"Diagnostic Settings ({target_type})",
-                                "source_resource": resource_id,
-                                "target_resource": target_id,
-                                "detail": detail,
-                                "impact": "Diagnostic data forwarding will break after transfer",
-                            })
+                        _check_and_append(
+                            deps, subscription_id, sub_set,
+                            target_id or "",
+                            f"Diagnostic Settings ({target_type})",
+                            resource_id, (
+                                f"'{resource.name}' sends diagnostics"
+                                f" to {target_type} in another sub"
+                            ),
+                            "Diagnostic data forwarding will break "
+                            "after transfer",
+                        )
             except Exception:
-                # Some resource types don't support diagnostic settings
+                # Resource type may not support diagnostic settings
                 continue
     except ImportError:
-        logger.warning("azure-mgmt-monitor not installed — skipping diagnostic settings detection")
+        logger.warning(
+            "azure-mgmt-monitor not installed — "
+            "skipping diagnostic settings detection"
+        )
+    return deps
+
+
+def _detect_nsg_references(
+    credential: TokenCredential,
+    subscription_id: str,
+    sub_set: set[str],
+) -> list[dict[str, Any]]:
+    """Detect NSG rules referencing address prefixes in other subs.
+
+    NSG rules can contain ``sourceAddressPrefix`` or
+    ``destinationAddressPrefix`` pointing to an Application Security
+    Group (ASG) in another subscription.  The rule's
+    ``source_application_security_groups`` and
+    ``destination_application_security_groups`` lists contain full ARM
+    IDs that we check.
+    """
+    deps: list[dict[str, Any]] = []
+    try:
+        from azure.mgmt.network import NetworkManagementClient
+        client = NetworkManagementClient(credential, subscription_id)
+
+        for nsg in client.network_security_groups.list_all():
+            nsg_id = nsg.id or ""
+            all_rules = list(nsg.security_rules or [])
+            all_rules.extend(nsg.default_security_rules or [])
+            for rule in all_rules:
+                for asg in (
+                    rule.source_application_security_groups or []
+                ):
+                    _check_and_append(
+                        deps, subscription_id, sub_set,
+                        asg.id or "", "NSG Rule (Source ASG)",
+                        nsg_id,
+                        f"NSG '{nsg.name}' rule '{rule.name}' "
+                        f"references ASG in another subscription",
+                        "NSG rule will lose connectivity to the "
+                        "ASG after transfer",
+                    )
+                for asg in (
+                    rule.destination_application_security_groups
+                    or []
+                ):
+                    _check_and_append(
+                        deps, subscription_id, sub_set,
+                        asg.id or "",
+                        "NSG Rule (Destination ASG)",
+                        nsg_id,
+                        f"NSG '{nsg.name}' rule '{rule.name}' "
+                        f"references ASG in another subscription",
+                        "NSG rule will lose connectivity to the "
+                        "ASG after transfer",
+                    )
+    except ImportError:
+        logger.warning(
+            "azure-mgmt-network not installed — "
+            "skipping NSG detection"
+        )
+    return deps
+
+
+def _detect_load_balancer_refs(
+    credential: TokenCredential,
+    subscription_id: str,
+    sub_set: set[str],
+) -> list[dict[str, Any]]:
+    """Detect Load Balancers with backend pools or rules referencing other subs.
+
+    Backend address pools can reference VNets/subnets in other
+    subscriptions.  Frontend IP configs can reference public IPs or
+    subnets cross-sub.
+    """
+    deps: list[dict[str, Any]] = []
+    try:
+        from azure.mgmt.network import NetworkManagementClient
+        client = NetworkManagementClient(credential, subscription_id)
+
+        for lb in client.load_balancers.list_all():
+            lb_id = lb.id or ""
+            lb_str = str(lb.serialize()) if hasattr(lb, "serialize") else str(lb)
+
+            # Scan the serialized LB for any cross-sub references
+            for match in _SUB_ID_RE.finditer(lb_str):
+                found = match.group(1).lower()
+                if found in sub_set and found != subscription_id.lower():
+                    deps.append({
+                        "source_sub": subscription_id,
+                        "target_sub": match.group(1),
+                        "type": "Load Balancer",
+                        "source_resource": lb_id,
+                        "target_resource": "(cross-sub reference"
+                            " in LB config)",
+                        "detail": (
+                            f"LB '{lb.name}' references resources"
+                            f" in another subscription"
+                        ),
+                        "impact": (
+                            "Load balancer backend/frontend config "
+                            "may break after transfer"
+                        ),
+                    })
+                    break  # one dep per LB is enough
+    except ImportError:
+        logger.warning(
+            "azure-mgmt-network not installed — "
+            "skipping Load Balancer detection"
+        )
     return deps
 
 

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from tenova.cross_sub import (
     _build_matrix,
     _build_sub_summaries,
+    _check_and_append,
     _deduplicate,
     _find_cross_sub_references,
     _suggest_order,
@@ -178,12 +179,15 @@ class TestAnalyzeCrossSubDependencies:
     """Integration test of the full analysis flow (all SDK calls mocked)."""
 
     @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
+    @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
+    @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
     @patch("tenova.cross_sub._detect_private_dns_links", return_value=[])
     @patch("tenova.cross_sub._detect_private_endpoints", return_value=[])
     @patch("tenova.cross_sub._detect_vnet_peering")
     @patch("tenova.cross_sub.scan_subscription")
     def test_detects_vnet_peering_dependency(
-        self, mock_scan, mock_vnet, mock_pe, mock_dns, mock_diag, mock_credential
+        self, mock_scan, mock_vnet, mock_pe, mock_dns,
+        mock_nsg, mock_lb, mock_diag, mock_credential
     ):
         # Scan returns resources with cross-sub references
         mock_scan.side_effect = lambda cred, sid: {
@@ -215,12 +219,15 @@ class TestAnalyzeCrossSubDependencies:
         assert result["suggested_order"][0] == SUB_B  # depended upon
 
     @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
+    @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
+    @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
     @patch("tenova.cross_sub._detect_private_dns_links", return_value=[])
     @patch("tenova.cross_sub._detect_private_endpoints", return_value=[])
     @patch("tenova.cross_sub._detect_vnet_peering", return_value=[])
     @patch("tenova.cross_sub.scan_subscription")
     def test_no_dependencies(
-        self, mock_scan, mock_vnet, mock_pe, mock_dns, mock_diag, mock_credential
+        self, mock_scan, mock_vnet, mock_pe, mock_dns,
+        mock_nsg, mock_lb, mock_diag, mock_credential
     ):
         mock_scan.return_value = {"transfer_safe": [{"id": "x"}], "requires_action": []}
 
@@ -232,12 +239,15 @@ class TestAnalyzeCrossSubDependencies:
             assert s["total_dependencies"] == 0
 
     @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
+    @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
+    @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
     @patch("tenova.cross_sub._detect_private_dns_links", return_value=[])
     @patch("tenova.cross_sub._detect_private_endpoints", return_value=[])
     @patch("tenova.cross_sub._detect_vnet_peering", return_value=[])
     @patch("tenova.cross_sub.scan_subscription")
     def test_scan_failure_for_one_sub_does_not_block(
-        self, mock_scan, mock_vnet, mock_pe, mock_dns, mock_diag, mock_credential
+        self, mock_scan, mock_vnet, mock_pe, mock_dns,
+        mock_nsg, mock_lb, mock_diag, mock_credential
     ):
         """If one sub scan fails, the others should still succeed."""
         def side_effect(cred, sid):
@@ -255,12 +265,15 @@ class TestAnalyzeCrossSubDependencies:
         assert sub_a["error"] is not None
 
     @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
+    @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
+    @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
     @patch("tenova.cross_sub._detect_private_dns_links", return_value=[])
     @patch("tenova.cross_sub._detect_private_endpoints", return_value=[])
     @patch("tenova.cross_sub._detect_vnet_peering", return_value=[])
     @patch("tenova.cross_sub.scan_subscription")
     def test_three_subs_with_chain(
-        self, mock_scan, mock_vnet, mock_pe, mock_dns, mock_diag, mock_credential
+        self, mock_scan, mock_vnet, mock_pe, mock_dns,
+        mock_nsg, mock_lb, mock_diag, mock_credential
     ):
         """A → B → C chain should suggest C first (most depended on indirectly)."""
         mock_scan.return_value = {"transfer_safe": [], "requires_action": []}
@@ -283,3 +296,46 @@ class TestAnalyzeCrossSubDependencies:
         assert len(result["dependencies"]) >= 2
         assert result["matrix"][SUB_A].get(SUB_B, 0) > 0
         assert result["matrix"][SUB_B].get(SUB_C, 0) > 0
+
+
+class TestCheckAndAppend:
+    """Test the _check_and_append helper."""
+
+    def test_appends_when_target_in_other_sub(self):
+        deps: list = []
+        sub_set = {SUB_A.lower(), SUB_B.lower()}
+        target = f"/subscriptions/{SUB_B}/rg/providers/X/Y/z"
+        _check_and_append(
+            deps, SUB_A, sub_set, target,
+            "Test", "/source", "detail", "impact",
+        )
+        assert len(deps) == 1
+        assert deps[0]["target_sub"].lower() == SUB_B.lower()
+
+    def test_skips_same_sub(self):
+        deps: list = []
+        sub_set = {SUB_A.lower(), SUB_B.lower()}
+        target = f"/subscriptions/{SUB_A}/rg/providers/X/Y/z"
+        _check_and_append(
+            deps, SUB_A, sub_set, target,
+            "Test", "/source", "detail", "impact",
+        )
+        assert len(deps) == 0
+
+    def test_skips_empty_target(self):
+        deps: list = []
+        _check_and_append(
+            deps, SUB_A, {SUB_A.lower()}, "",
+            "Test", "/source", "detail", "impact",
+        )
+        assert len(deps) == 0
+
+    def test_skips_unknown_sub(self):
+        deps: list = []
+        sub_set = {SUB_A.lower(), SUB_B.lower()}
+        target = f"/subscriptions/{SUB_C}/rg/providers/X/Y/z"
+        _check_and_append(
+            deps, SUB_A, sub_set, target,
+            "Test", "/source", "detail", "impact",
+        )
+        assert len(deps) == 0

@@ -1416,19 +1416,19 @@ $(function () {
 
     // ── Dependency matrix ──
     var subIds = subs.map(function (s) { return s.subscription_id; });
-    var headHtml = '<tr><th class="bg-light"></th>';
+    var headHtml = '<tr><th class="table-dark"></th>';
     subIds.forEach(function (sid) {
-      headHtml += '<th class="text-center bg-light" title="' + sid + '">' + shortSub(sid) + '</th>';
+      headHtml += '<th class="text-center table-dark" title="' + sid + '">' + shortSub(sid) + '</th>';
     });
     headHtml += '</tr>';
     $('#cs-matrix-head').html(headHtml);
 
     var bodyHtml = '';
     subIds.forEach(function (srcSid) {
-      bodyHtml += '<tr><td class="fw-semibold bg-light" title="' + srcSid + '">' + shortSub(srcSid) + '</td>';
+      bodyHtml += '<tr><td class="fw-semibold table-dark" title="' + srcSid + '">' + shortSub(srcSid) + '</td>';
       subIds.forEach(function (tgtSid) {
         if (srcSid === tgtSid) {
-          bodyHtml += '<td class="text-center bg-light">—</td>';
+          bodyHtml += '<td class="text-center table-secondary">—</td>';
         } else {
           var count = (matrix[srcSid] && matrix[srcSid][tgtSid]) || 0;
           var cls = count > 0 ? 'table-warning fw-bold' : '';
