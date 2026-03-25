@@ -41,6 +41,8 @@ logger = get_logger("tasks")
 TASK_TTL_SECONDS: int = 2 * 60 * 60  # 2 hours
 # Hard cap on total tasks to prevent memory exhaustion.
 MAX_TASKS: int = 500
+# Maximum time a task may run before being marked as failed (seconds).
+TASK_TIMEOUT_SECONDS: int = 30 * 60  # 30 minutes
 
 
 class TaskStatus(str, Enum):
@@ -235,6 +237,8 @@ def get_task(task_id: str, *, owner_id: str = "") -> TaskResult | None:
             task_id, task.owner_id, owner_id,
         )
         return None
+    # Passive timeout check — fail tasks that have been running too long
+    _check_task_timeout(task)
     return task
 
 
@@ -251,7 +255,7 @@ def _store_task(task: TaskResult) -> None:
 
 
 def _evict_stale_tasks() -> None:
-    """Remove tasks whose TTL has expired."""
+    """Remove tasks whose TTL has expired and time out hung tasks."""
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(seconds=TASK_TTL_SECONDS)
     with _tasks_lock:
@@ -263,6 +267,28 @@ def _evict_stale_tasks() -> None:
             del _tasks[tid]
         if stale:
             logger.info("Evicted %d stale task(s)", len(stale))
+    # Also check running tasks for timeout
+    for task in list(_tasks.values()):
+        _check_task_timeout(task)
+
+
+def _check_task_timeout(task: TaskResult) -> None:
+    """Mark a running task as failed if it has exceeded the timeout."""
+    if task.status != TaskStatus.RUNNING or task.started_at is None:
+        return
+    elapsed = (datetime.now(timezone.utc) - task.started_at).total_seconds()
+    if elapsed > TASK_TIMEOUT_SECONDS:
+        task.status = TaskStatus.FAILED
+        task.error = (
+            f"Task timed out after {int(elapsed // 60)} minutes. "
+            f"The operation may still be running in Azure — check the "
+            f"Azure portal to verify resource state."
+        )
+        task.completed_at = datetime.now(timezone.utc)
+        logger.warning(
+            "Task %s timed out after %d seconds",
+            task.task_id, int(elapsed),
+        )
 
 
 def _find_oldest_finished_task() -> str | None:
