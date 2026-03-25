@@ -493,43 +493,6 @@ def migration_plan(task_id: str):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Readiness Check
-# ──────────────────────────────────────────────────────────────────────
-
-@main_bp.route("/readiness", methods=["POST"])
-@login_required
-@limiter.limit("10 per minute")
-def readiness():
-    """Start a background readiness check."""
-    subscription_id = request.form.get("subscription_id", "").strip()
-    if not subscription_id:
-        return jsonify({"error": "subscription_id is required"}), 400
-    if not _UUID_RE.match(subscription_id):
-        return jsonify({"error": "subscription_id must be a valid UUID"}), 400
-
-    token = get_access_token()
-    task_id = start_readiness_check(token, subscription_id, owner_id=_get_owner_id())
-    session["last_readiness_sub"] = subscription_id
-    return redirect(url_for("main.readiness_status", task_id=task_id))
-
-
-@main_bp.route("/readiness/<task_id>")
-@login_required
-def readiness_status(task_id: str):
-    """Show readiness check progress / results."""
-    task = get_task(task_id, owner_id=_get_owner_id())
-    if task is None:
-        return render_template("error.html", message="Task not found."), 404
-
-    return render_template(
-        "readiness.html",
-        task=task,
-        task_id=task_id,
-        subscription_id=session.get("last_readiness_sub", ""),
-    )
-
-
-# ──────────────────────────────────────────────────────────────────────
 # Interactive Migration Checklist
 # ──────────────────────────────────────────────────────────────────────
 
@@ -1013,22 +976,4 @@ def upload_bundle():
     return redirect(url_for("main.dashboard", tab="workflow"))
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Migration Workflow — end-to-end orchestration page
-# ──────────────────────────────────────────────────────────────────────
 
-@main_bp.route("/workflow")
-@login_required
-def workflow():
-    """Show the migration workflow dashboard."""
-    subscription_id = session.get("last_scan_sub", "")
-    bundle_manifest = session.get("bundle_manifest")
-    has_bundle = bundle_manifest is not None
-
-    return render_template(
-        "workflow.html",
-        subscription_id=subscription_id,
-        has_bundle=has_bundle,
-        bundle_manifest=bundle_manifest,
-        source_tenant_id=session.get("tenant_id", ""),
-    )

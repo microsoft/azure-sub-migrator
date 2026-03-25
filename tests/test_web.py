@@ -114,11 +114,9 @@ class TestAuthGuards:
 
     @pytest.mark.parametrize("path", [
         "/dashboard",
-        "/workflow",
         f"/scan/{FAKE_TASK_ID}",
         f"/api/task/{FAKE_TASK_ID}",
         f"/plan/{FAKE_TASK_ID}",
-        f"/readiness/{FAKE_TASK_ID}",
         f"/checklist/{FAKE_TASK_ID}",
         f"/export-rbac/{FAKE_TASK_ID}",
         f"/export/runbook/{FAKE_TASK_ID}",
@@ -138,7 +136,6 @@ class TestAuthGuards:
 
     @pytest.mark.parametrize("path", [
         "/scan",
-        "/readiness",
         "/export-rbac",
         "/pre-transfer",
     ])
@@ -487,27 +484,6 @@ class TestScanFormPost:
         assert "/scan/task-abc" in resp.headers["Location"]
 
 
-# ── POST /readiness (form-based) ────────────────────────────────────
-
-class TestReadinessFormPost:
-    """Tests for POST /readiness."""
-
-    def test_missing_subscription(self, auth_client):
-        resp = auth_client.post("/readiness", data={})
-        assert resp.status_code == 400
-
-    def test_valid_readiness_redirects(self, auth_client):
-        with patch("web.routes.get_access_token", return_value="tok"):
-            with patch("web.routes.start_readiness_check", return_value="task-r1"):
-                resp = auth_client.post(
-                    "/readiness",
-                    data={"subscription_id": FAKE_SUB_ID},
-                    follow_redirects=False,
-                )
-        assert resp.status_code == 302
-        assert "/readiness/task-r1" in resp.headers["Location"]
-
-
 # ── POST /export-rbac (form-based) ──────────────────────────────────
 
 class TestExportRbacFormPost:
@@ -634,17 +610,3 @@ class TestScanStatusPage:
             resp = auth_client.get(f"/scan/{FAKE_TASK_ID}")
         assert resp.status_code == 404
 
-
-# ── Workflow Page ────────────────────────────────────────────────────
-
-class TestWorkflowPage:
-    """Tests for GET /workflow."""
-
-    def test_requires_auth(self, client):
-        resp = client.get("/workflow", follow_redirects=False)
-        assert resp.status_code == 302
-        assert "/auth/login" in resp.headers["Location"]
-
-    def test_authenticated_returns_200(self, auth_client):
-        resp = auth_client.get("/workflow")
-        assert resp.status_code == 200
