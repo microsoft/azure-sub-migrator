@@ -577,6 +577,10 @@ $(function () {
   }
 
   function resetWorkflow() {
+    // Server-side session flags — these persist across page loads
+    var serverHasBundle = {{ 'true' if has_bundle else 'false' }};
+    var serverTargetConnected = {{ 'true' if target_tenant_connected else 'false' }};
+
     // Clear task state
     wfState.scanTaskId = null;
     wfState.readinessTaskId = null;
@@ -586,11 +590,15 @@ $(function () {
     wfState.validationTaskId = null;
 
     // Steps that are always JS-driven: reset to initial locked state
+    // Exclude #wf-step-mapping if server says target tenant is connected
     var jsSteps = [
       '#wf-step-export', '#wf-step-bundle',
-      '#wf-step-mapping', '#wf-step-restore',
+      '#wf-step-restore',
       '#wf-step-validation', '#wf-step-close'
     ];
+    if (!serverTargetConnected) {
+      jsSteps.push('#wf-step-mapping');
+    }
     jsSteps.forEach(function (sel) {
       var $s = $(sel);
       $s.addClass('opacity-50').css('border-color', '');
@@ -615,29 +623,36 @@ $(function () {
       .removeClass('btn-outline-success').addClass('btn-primary')
       .html('<i class="bi bi-play-fill me-1"></i>Analyze');
 
-    // Reset Step 4 (upload) — restore upload button if bundle badge is showing
+    // Reset Step 4 (upload) — only if the server says no bundle in session
     var $step4 = $('#wf-step-upload');
     $step4.css('border-color', '');
-    var $badge4 = $step4.find('.badge.bg-success');
-    if ($badge4.length) {
-      $badge4.replaceWith(
-        '<a href="{{ url_for("main.upload_bundle_page") }}" class="btn btn-outline-warning btn-sm">' +
-        '<i class="bi bi-upload me-1"></i>Upload Bundle</a>'
-      );
+    if (!serverHasBundle) {
+      var $badge4 = $step4.find('.badge.bg-success');
+      if ($badge4.length) {
+        $badge4.replaceWith(
+          '<a href="{{ url_for("main.upload_bundle_page") }}" class="btn btn-outline-warning btn-sm">' +
+          '<i class="bi bi-upload me-1"></i>Upload Bundle</a>'
+        );
+      }
     }
 
-    // Reset Step 5 (target tenant) — restore connect button
+    // Reset Step 5 (target tenant) — only if server says not connected
     var $step5 = $('#wf-step-target');
-    $step5.addClass('opacity-50').css('border-color', '');
-    var $badge5 = $step5.find('.badge.bg-success');
-    if ($badge5.length) {
-      $badge5.replaceWith(
-        '<button class="btn btn-warning btn-sm" id="wf-target-btn" disabled>' +
-        '<i class="bi bi-box-arrow-in-right me-1"></i>Connect Target Tenant</button>'
-      );
+    if (!serverHasBundle) {
+      $step5.addClass('opacity-50').css('border-color', '');
+      var $badge5 = $step5.find('.badge.bg-success');
+      if ($badge5.length) {
+        $badge5.replaceWith(
+          '<button class="btn btn-warning btn-sm" id="wf-target-btn" disabled>' +
+          '<i class="bi bi-box-arrow-in-right me-1"></i>Connect Target Tenant</button>'
+        );
+      }
+      $('#wf-target-form').addClass('d-none');
+      $step5.find('button').prop('disabled', true);
+    } else if (!serverTargetConnected) {
+      $step5.removeClass('opacity-50').css('border-color', '');
+      $step5.find('button').prop('disabled', false);
     }
-    $('#wf-target-form').addClass('d-none');
-    $step5.find('button').prop('disabled', true);
 
     // Reset Step 9 badge
     $('#wf-close-badge').removeClass('bg-success').addClass('bg-secondary').text('Pending');
