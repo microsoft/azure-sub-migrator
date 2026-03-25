@@ -22,7 +22,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 from azure.core.credentials import AccessToken, TokenCredential
 
@@ -60,6 +60,16 @@ class TaskResult:
     completed_at: datetime | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    # Progress tracking (updated by background workers)
+    progress_pct: int = 0  # 0-100
+    current_step: str = ""
+    total_steps: int = 0
+    steps_completed: int = 0
+
+
+# Type alias for the progress callback accepted by backend functions.
+# Signature: callback(step_name: str, step_number: int, total_steps: int)
+ProgressCallback = Callable[[str, int, int], None]
 
 
 # In-memory task store (sufficient for single-instance App Service)
@@ -272,6 +282,25 @@ def fetch_subscriptions(access_token: str) -> list[dict[str, str]]:
     return list_subscriptions(cred)
 
 
+def _make_progress_callback(task: TaskResult) -> ProgressCallback:
+    """Return a progress callback that writes directly to the task object.
+
+    Because TaskResult fields are simple scalars and the GIL guarantees
+    atomic writes, this is safe without a lock for the use case of a
+    single writer thread + a single reader (the Flask poll endpoint).
+    """
+    def _cb(step_name: str, step_number: int, total_steps: int) -> None:
+        task.current_step = step_name
+        task.steps_completed = step_number
+        task.total_steps = total_steps
+        task.progress_pct = int((step_number / total_steps) * 100) if total_steps > 0 else 0
+        logger.debug(
+            "Task %s progress: %d/%d (%d%%) — %s",
+            task.task_id, step_number, total_steps, task.progress_pct, step_name,
+        )
+    return _cb
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Background worker
 # ──────────────────────────────────────────────────────────────────────
@@ -280,13 +309,16 @@ def _run_scan(task: TaskResult, access_token: str, subscription_id: str) -> None
     """Execute the subscription scan + readiness classification in a background thread."""
     task.status = TaskStatus.RUNNING
     task.started_at = datetime.now(timezone.utc)
+    progress = _make_progress_callback(task)
     try:
         cred = _credential_from_token(access_token)
-        report = scan_subscription(cred, subscription_id)
+        report = scan_subscription(cred, subscription_id, on_progress=progress)
 
         # Auto-classify readiness from the scan results (no extra API calls)
         from tenova.readiness import classify_readiness
+        progress("Classifying readiness", 6, 7)
         readiness = classify_readiness(report)
+        progress("Complete", 7, 7)
 
         task.result = {**report, "readiness": readiness}
         task.status = TaskStatus.COMPLETED
@@ -303,9 +335,10 @@ def _run_readiness(task: TaskResult, access_token: str, subscription_id: str) ->
     """Execute the readiness check in a background thread."""
     task.status = TaskStatus.RUNNING
     task.started_at = datetime.now(timezone.utc)
+    progress = _make_progress_callback(task)
     try:
         cred = _credential_from_token(access_token)
-        result = check_readiness(cred, subscription_id)
+        result = check_readiness(cred, subscription_id, on_progress=progress)
         task.result = {"readiness": result}
         task.status = TaskStatus.COMPLETED
         logger.info("Readiness task %s completed", task.task_id)
@@ -321,13 +354,17 @@ def _run_rbac_export(task: TaskResult, access_token: str, subscription_id: str) 
     """Execute the RBAC export in a background thread."""
     task.status = TaskStatus.RUNNING
     task.started_at = datetime.now(timezone.utc)
+    progress = _make_progress_callback(task)
     try:
         cred = _credential_from_token(access_token)
+        progress("Exporting RBAC assignments", 1, 3)
         export_path = export_rbac(cred, subscription_id)
         # Read the exported JSON to send back as the result
         import json as _json
+        progress("Reading export data", 2, 3)
         with open(export_path) as f:
             export_data = _json.load(f)
+        progress("Complete", 3, 3)
         task.result = {
             "rbac_export": {
                 "file_path": str(export_path),
@@ -361,6 +398,7 @@ def _run_post_transfer(
     """Execute post-transfer reconfiguration in a background thread."""
     task.status = TaskStatus.RUNNING
     task.started_at = datetime.now(timezone.utc)
+    progress = _make_progress_callback(task)
     try:
         cred = _credential_from_token(access_token)
         result = run_post_transfer(
@@ -371,6 +409,7 @@ def _run_post_transfer(
             principal_mapping=principal_mapping,
             bundle_artifacts=bundle_artifacts or {},
             dry_run=dry_run,
+            on_progress=progress,
         )
         task.result = result
         task.status = TaskStatus.COMPLETED
@@ -392,12 +431,14 @@ def _run_pre_transfer(
     """Execute pre-transfer exports in a background thread."""
     task.status = TaskStatus.RUNNING
     task.started_at = datetime.now(timezone.utc)
+    progress = _make_progress_callback(task)
     try:
         cred = _credential_from_token(access_token)
         result = run_pre_transfer(
             credential=cred,
             subscription_id=subscription_id,
             scan_data=scan_data,
+            on_progress=progress,
         )
         task.result = result
         task.status = TaskStatus.COMPLETED
@@ -418,9 +459,12 @@ def _run_cross_sub_analysis(
     """Execute cross-subscription dependency analysis in a background thread."""
     task.status = TaskStatus.RUNNING
     task.started_at = datetime.now(timezone.utc)
+    progress = _make_progress_callback(task)
     try:
         cred = _credential_from_token(access_token)
-        result = analyze_cross_sub_dependencies(cred, subscription_ids)
+        result = analyze_cross_sub_dependencies(
+            cred, subscription_ids, on_progress=progress,
+        )
         task.result = result
         task.status = TaskStatus.COMPLETED
         logger.info(

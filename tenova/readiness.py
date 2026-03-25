@@ -18,6 +18,7 @@ Usage
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from azure.core.credentials import TokenCredential
@@ -64,6 +65,8 @@ _CMK_WARNING_TYPES: set[str] = {
 def check_readiness(
     credential: TokenCredential,
     subscription_id: str,
+    *,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, Any]:
     """Run a comprehensive pre-transfer readiness check.
 
@@ -73,6 +76,7 @@ def check_readiness(
     - ``warnings``: list of warning dicts (should fix, risk if ignored)
     - ``info``: list of informational items
     """
+    _progress = on_progress or (lambda *_: None)
     logger.info("Running readiness check for subscription %s …", subscription_id)
 
     blockers: list[dict[str, str]] = []
@@ -80,6 +84,7 @@ def check_readiness(
     info: list[dict[str, str]] = []
 
     # ── 1. Scan resources ──────────────────────────────────────────
+    _progress("Scanning resources", 1, 6)
     scan_result = scan_subscription(credential, subscription_id)
     requires_action = scan_result.get("requires_action", [])
 
@@ -135,6 +140,7 @@ def check_readiness(
             })
 
     # ── 2. Check RBAC ──────────────────────────────────────────────
+    _progress("Classifying resources", 2, 6)
     try:
         assignments = list_role_assignments(credential, subscription_id)
         if assignments:
@@ -154,6 +160,7 @@ def check_readiness(
         })
 
     # ── 3. Check custom roles ──────────────────────────────────────
+    _progress("Checking RBAC assignments", 3, 6)
     try:
         custom_roles = list_custom_roles(credential, subscription_id)
         if custom_roles:
@@ -168,6 +175,7 @@ def check_readiness(
         pass  # Non-critical — already warned about RBAC access
 
     # ── 4. Check managed identities ────────────────────────────────
+    _progress("Checking custom roles", 4, 6)
     try:
         identities = list_managed_identities(credential, subscription_id)
         if identities:
@@ -182,6 +190,7 @@ def check_readiness(
         pass  # Non-critical
 
     # ── 5. Summary info ────────────────────────────────────────────
+    _progress("Checking managed identities", 5, 6)
     total_resources = (
         len(scan_result.get("transfer_safe", []))
         + len(requires_action)
@@ -196,6 +205,8 @@ def check_readiness(
     })
 
     ready = len(blockers) == 0
+
+    _progress("Complete", 6, 6)
 
     logger.info(
         "Readiness check complete: %s (%d blockers, %d warnings, %d info)",

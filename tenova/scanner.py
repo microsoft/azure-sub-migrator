@@ -20,7 +20,7 @@ https://learn.microsoft.com/en-us/azure/role-based-access-control/transfer-subsc
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from azure.core.credentials import TokenCredential
 from azure.mgmt.authorization import AuthorizationManagementClient
@@ -65,6 +65,8 @@ def list_subscriptions(credential: TokenCredential) -> list[dict[str, str]]:
 def scan_subscription(
     credential: TokenCredential,
     subscription_id: str,
+    *,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Scan all resources in *subscription_id* and classify them.
 
@@ -84,13 +86,16 @@ def scan_subscription(
           reconfiguration after the cross-tenant transfer.
     """
     logger.info("Scanning subscription %s", subscription_id)
+    _progress = on_progress or (lambda *_: None)
     try:
         client = ResourceManagementClient(credential, subscription_id)
 
         # ── Step 1: Query Resource Graph for runtime-detected impacted IDs ──
+        _progress("Querying Resource Graph", 1, 6)
         graph_impacted_ids = _query_resource_graph(credential, subscription_id)
 
         # ── Step 2: Enumerate all resources and classify ──
+        _progress("Enumerating resources", 2, 6)
         transfer_safe: list[dict[str, Any]] = []
         requires_action: list[dict[str, Any]] = []
 
@@ -150,6 +155,7 @@ def scan_subscription(
         )
 
         # ── Step 3: Discover policy objects (separate API namespace) ──
+        _progress("Discovering policies", 3, 6)
         # Policy assignments/definitions are NOT returned by resources.list()
         # but are permanently deleted during cross-tenant transfer.
         policy_items = _collect_policy_items(credential, subscription_id)
@@ -158,6 +164,7 @@ def scan_subscription(
             logger.info("Added %d policy item(s) to requires-action", len(policy_items))
 
         # ── Step 4: Discover RBAC items (separate API namespace) ──
+        _progress("Discovering RBAC assignments", 4, 6)
         # Role assignments and custom roles are permanently deleted.
         rbac_items = _collect_rbac_items(credential, subscription_id)
         requires_action.extend(rbac_items)
@@ -165,6 +172,7 @@ def scan_subscription(
             logger.info("Added %d RBAC item(s) to requires-action", len(rbac_items))
 
         # ── Step 5: Discover resource locks ──
+        _progress("Discovering resource locks", 5, 6)
         # Locks should be exported before transfer and recreated after.
         lock_items = _collect_lock_items(credential, subscription_id)
         requires_action.extend(lock_items)
@@ -172,6 +180,7 @@ def scan_subscription(
             logger.info("Added %d lock item(s) to requires-action", len(lock_items))
 
         # ── Step 6: Build hierarchical parent-child view ──
+        _progress("Building hierarchy", 6, 6)
         # If a child resource (e.g. VM extension) requires action but its
         # parent (e.g. VM) was classified as transfer-safe, promote the
         # parent into requires_action and nest children underneath it.

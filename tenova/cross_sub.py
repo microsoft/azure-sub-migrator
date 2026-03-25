@@ -14,6 +14,7 @@ subscription is transferred in isolation.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -83,6 +84,8 @@ def _check_and_append(
 def analyze_cross_sub_dependencies(
     credential: TokenCredential,
     subscription_ids: list[str],
+    *,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, Any]:
     """Scan multiple subscriptions and detect cross-sub dependencies.
 
@@ -92,6 +95,8 @@ def analyze_cross_sub_dependencies(
         Azure credential with Reader access to all subscriptions.
     subscription_ids : list[str]
         Two or more subscription IDs to analyze.
+    on_progress : callable, optional
+        Callback ``(step_name, step_number, total_steps)``.
 
     Returns
     -------
@@ -101,6 +106,8 @@ def analyze_cross_sub_dependencies(
         - ``matrix`` – adjacency dict  ``{source_sub: {target_sub: count}}``.
         - ``suggested_order`` – topological sort hint (least-depended first).
     """
+    _progress = on_progress or (lambda *_: None)
+
     if len(subscription_ids) < 2:
         return {
             "subscriptions": [],
@@ -111,9 +118,14 @@ def analyze_cross_sub_dependencies(
         }
 
     sub_set = {s.lower() for s in subscription_ids}
+    n_subs = len(subscription_ids)
+    # Steps: scan each sub (n_subs) + detect deps per sub (n_subs) + generic scan + build summary
+    total = n_subs + n_subs + 2
 
     # ── Step 1: Scan each subscription (parallel) ──
+    _progress("Scanning subscriptions", 0, total)
     scan_results: dict[str, dict[str, Any]] = {}
+    completed_scans = 0
     with ThreadPoolExecutor(max_workers=min(len(subscription_ids), 4)) as pool:
         futures = {
             pool.submit(scan_subscription, credential, sid): sid
@@ -126,11 +138,15 @@ def analyze_cross_sub_dependencies(
             except Exception as exc:
                 logger.warning("Scan failed for %s: %s", sid, exc)
                 scan_results[sid] = {"transfer_safe": [], "requires_action": [], "error": str(exc)}
+            completed_scans += 1
+            _progress(f"Scanned {completed_scans}/{n_subs} subscriptions", completed_scans, total)
 
     # ── Step 2: Detect cross-sub references via targeted SDK calls ──
     dependencies: list[dict[str, Any]] = []
 
-    for sid in subscription_ids:
+    for sub_idx, sid in enumerate(subscription_ids):
+        step = n_subs + sub_idx + 1
+        _progress(f"Detecting dependencies ({sub_idx + 1}/{n_subs})", step, total)
         try:
             deps = _detect_vnet_peering(credential, sid, sub_set)
             dependencies.extend(deps)
@@ -174,6 +190,7 @@ def analyze_cross_sub_dependencies(
             logger.warning("Route table detection failed for %s: %s", sid, exc)
 
     # ── Step 3: Generic cross-sub reference scan via resource IDs ──
+    _progress("Scanning resource properties", n_subs * 2 + 1, total)
     for sid in subscription_ids:
         scan = scan_results.get(sid, {})
         all_resources = scan.get("transfer_safe", []) + scan.get("requires_action", [])
@@ -184,6 +201,7 @@ def analyze_cross_sub_dependencies(
     # ── Step 4: Deduplicate ──
     dependencies = _deduplicate(dependencies)
 
+    _progress("Building summary", total, total)
     # ── Step 5: Build summary structures ──
     matrix = _build_matrix(dependencies, subscription_ids)
     subscriptions = _build_sub_summaries(subscription_ids, scan_results, matrix)

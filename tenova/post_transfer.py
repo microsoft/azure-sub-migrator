@@ -17,7 +17,7 @@ result dict so the UI can show progress and final status.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from azure.core.credentials import TokenCredential
 
@@ -38,6 +38,7 @@ def run_post_transfer(
     principal_mapping: dict[str, str],
     *,
     dry_run: bool = False,
+    on_progress: Callable[[str, int, int], None] | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Run all post-transfer operations and return a summary.
@@ -65,6 +66,8 @@ def run_post_transfer(
     if dry_run:
         logger.info("DRY RUN mode — no Azure APIs will be called")
 
+    _progress = on_progress or (lambda *_: None)
+
     results: dict[str, Any] = {
         "operations": [],
         "summary": {"total": 0, "succeeded": 0, "failed": 0, "skipped": 0},
@@ -73,8 +76,44 @@ def run_post_transfer(
 
     requires_action = scan_data.get("requires_action", [])
 
+    # Pre-compute which phases have work so total_steps is accurate
+    kv_resources = _filter_by_type(requires_action, "Microsoft.KeyVault/vaults")
+    sql_resources = _filter_by_type(requires_action, "Microsoft.Sql/servers")
+    app_resources = _filter_by_type(requires_action, "Microsoft.Web/sites")
+    mi_resources = _filter_by_type(
+        requires_action, "Microsoft.ManagedIdentity/userAssignedIdentities",
+    )
+    bundle_artifacts = kwargs.get("bundle_artifacts", {})
+    policy_data = bundle_artifacts.get("policy_assignments", [])
+    policy_def_data = bundle_artifacts.get("policy_definitions", [])
+    lock_data = bundle_artifacts.get("resource_locks", [])
+    kv_policy_data = bundle_artifacts.get("keyvault_policies", {})
+    sami_resources = _find_sami_resources(requires_action)
+    storage_resources = _filter_by_type(
+        requires_action, "Microsoft.Storage/storageAccounts",
+    )
+
+    _phases: list[tuple[str, bool]] = [
+        ("Restoring RBAC assignments", bool(rbac_export)),
+        ("Updating Key Vault access policies", bool(kv_resources)),
+        ("Updating SQL Server AD admin", bool(sql_resources)),
+        ("Updating App Service authentication", bool(app_resources)),
+        ("Documenting managed identities", bool(mi_resources)),
+        ("Restoring policy assignments", bool(policy_data)),
+        ("Restoring custom policy definitions", bool(policy_def_data)),
+        ("Restoring resource locks", bool(lock_data)),
+        ("Restoring Key Vault from snapshot", bool(kv_policy_data and kv_policy_data.get("vaults"))),
+        ("Toggling system-assigned identities", bool(sami_resources)),
+        ("Rotating storage account keys", bool(storage_resources)),
+    ]
+    active_phases = [(name, idx) for idx, (name, has_work) in enumerate(_phases) if has_work]
+    total = len(active_phases) + 1  # +1 for final "Complete" step
+    step_num = 0
+
     # 1) RBAC restoration
     if rbac_export:
+        step_num += 1
+        _progress("Restoring RBAC assignments", step_num, total)
         rbac_result = _restore_rbac(
             credential, subscription_id, rbac_export, principal_mapping,
             dry_run=dry_run,
@@ -82,50 +121,56 @@ def run_post_transfer(
         results["operations"].append(rbac_result)
 
     # 2) Key Vault access policies
-    kv_resources = _filter_by_type(requires_action, "Microsoft.KeyVault/vaults")
-    for kv in kv_resources:
-        kv_result = _update_keyvault(
-            credential, subscription_id, kv, principal_mapping,
-            dry_run=dry_run,
-        )
-        results["operations"].append(kv_result)
+    if kv_resources:
+        step_num += 1
+        _progress("Updating Key Vault access policies", step_num, total)
+        for kv in kv_resources:
+            kv_result = _update_keyvault(
+                credential, subscription_id, kv, principal_mapping,
+                dry_run=dry_run,
+            )
+            results["operations"].append(kv_result)
 
     # 3) SQL Server AD admin
-    sql_resources = _filter_by_type(requires_action, "Microsoft.Sql/servers")
-    for sql in sql_resources:
-        sql_result = _update_sql_admin(
-            credential, subscription_id, sql, principal_mapping,
-            dry_run=dry_run,
-        )
-        results["operations"].append(sql_result)
+    if sql_resources:
+        step_num += 1
+        _progress("Updating SQL Server AD admin", step_num, total)
+        for sql in sql_resources:
+            sql_result = _update_sql_admin(
+                credential, subscription_id, sql, principal_mapping,
+                dry_run=dry_run,
+            )
+            results["operations"].append(sql_result)
 
     # 4) App Service auth
-    app_resources = _filter_by_type(requires_action, "Microsoft.Web/sites")
-    for app in app_resources:
-        app_result = _update_app_service_auth(
-            credential, subscription_id, app,
-            dry_run=dry_run,
-        )
-        results["operations"].append(app_result)
+    if app_resources:
+        step_num += 1
+        _progress("Updating App Service authentication", step_num, total)
+        for app in app_resources:
+            app_result = _update_app_service_auth(
+                credential, subscription_id, app,
+                dry_run=dry_run,
+            )
+            results["operations"].append(app_result)
 
     # 5) Managed Identity documentation
-    mi_resources = _filter_by_type(
-        requires_action, "Microsoft.ManagedIdentity/userAssignedIdentities",
-    )
-    for mi in mi_resources:
-        mi_result = _document_managed_identity(
-            credential, subscription_id, mi,
-            dry_run=dry_run,
-        )
-        results["operations"].append(mi_result)
+    if mi_resources:
+        step_num += 1
+        _progress("Documenting managed identities", step_num, total)
+        for mi in mi_resources:
+            mi_result = _document_managed_identity(
+                credential, subscription_id, mi,
+                dry_run=dry_run,
+            )
+            results["operations"].append(mi_result)
 
     # ── Bundle-driven restoration steps ──────────────────────────────
     # These run only when a pre-transfer bundle is provided.
-    bundle_artifacts = kwargs.get("bundle_artifacts", {})
 
     # 6) Policy assignment restoration
-    policy_data = bundle_artifacts.get("policy_assignments", [])
     if policy_data:
+        step_num += 1
+        _progress("Restoring policy assignments", step_num, total)
         policy_result = _restore_policy_assignments(
             credential, subscription_id, policy_data,
             dry_run=dry_run,
@@ -133,8 +178,9 @@ def run_post_transfer(
         results["operations"].append(policy_result)
 
     # 7) Custom policy definition restoration
-    policy_def_data = bundle_artifacts.get("policy_definitions", [])
     if policy_def_data:
+        step_num += 1
+        _progress("Restoring custom policy definitions", step_num, total)
         policy_def_result = _restore_policy_definitions(
             credential, subscription_id, policy_def_data,
             dry_run=dry_run,
@@ -142,8 +188,9 @@ def run_post_transfer(
         results["operations"].append(policy_def_result)
 
     # 8) Resource lock restoration
-    lock_data = bundle_artifacts.get("resource_locks", [])
     if lock_data:
+        step_num += 1
+        _progress("Restoring resource locks", step_num, total)
         lock_result = _restore_resource_locks(
             credential, subscription_id, lock_data,
             dry_run=dry_run,
@@ -151,8 +198,9 @@ def run_post_transfer(
         results["operations"].append(lock_result)
 
     # 9) Key Vault access policy restoration (from bundle)
-    kv_policy_data = bundle_artifacts.get("keyvault_policies", {})
     if kv_policy_data and kv_policy_data.get("vaults"):
+        step_num += 1
+        _progress("Restoring Key Vault from snapshot", step_num, total)
         for vault_snapshot in kv_policy_data["vaults"]:
             kv_result = _restore_keyvault_from_snapshot(
                 credential, subscription_id, vault_snapshot, principal_mapping,
@@ -161,8 +209,9 @@ def run_post_transfer(
             results["operations"].append(kv_result)
 
     # 10) Toggle system-assigned managed identities
-    sami_resources = _find_sami_resources(requires_action)
     if sami_resources:
+        step_num += 1
+        _progress("Toggling system-assigned identities", step_num, total)
         sami_result = _toggle_managed_identities(
             credential, subscription_id, sami_resources,
             dry_run=dry_run,
@@ -170,15 +219,16 @@ def run_post_transfer(
         results["operations"].append(sami_result)
 
     # 11) Rotate storage account keys
-    storage_resources = _filter_by_type(
-        requires_action, "Microsoft.Storage/storageAccounts",
-    )
     if storage_resources:
+        step_num += 1
+        _progress("Rotating storage account keys", step_num, total)
         storage_result = _rotate_storage_keys(
             credential, subscription_id, storage_resources,
             dry_run=dry_run,
         )
         results["operations"].append(storage_result)
+
+    _progress("Complete", total, total)
 
     # Tally summary
     for op in results["operations"]:

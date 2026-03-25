@@ -154,6 +154,10 @@ def api_task_status(task_id: str):
         "task_id": task.task_id,
         "status": task.status.value,
         "task_type": task.task_type,
+        "progress_pct": task.progress_pct,
+        "current_step": task.current_step,
+        "steps_completed": task.steps_completed,
+        "total_steps": task.total_steps,
     }
     # Scan results
     if task.task_type == "scan" and task.result:
@@ -808,6 +812,10 @@ def api_post_transfer_status(task_id: str):
         "task_id": task.task_id,
         "status": task.status.value,
         "task_type": task.task_type,
+        "progress_pct": task.progress_pct,
+        "current_step": task.current_step,
+        "steps_completed": task.steps_completed,
+        "total_steps": task.total_steps,
     }
     if task.result:
         payload["result"] = task.result
@@ -874,6 +882,10 @@ def api_pre_transfer_status(task_id: str):
         "task_id": task.task_id,
         "status": task.status.value,
         "task_type": task.task_type,
+        "progress_pct": task.progress_pct,
+        "current_step": task.current_step,
+        "steps_completed": task.steps_completed,
+        "total_steps": task.total_steps,
     }
     if task.result:
         payload["steps"] = task.result.get("steps", [])

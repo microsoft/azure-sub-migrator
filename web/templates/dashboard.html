@@ -181,10 +181,13 @@
         </button>
       </div>
       <div id="wf-scan-progress" class="mt-3 d-none">
-        <div class="progress" style="height: 6px;">
-          <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <small class="text-body-secondary" id="wf-scan-step">Starting…</small>
+          <small class="fw-semibold" id="wf-scan-pct">0%</small>
         </div>
-        <small class="text-body-secondary">Scanning resources &amp; checking readiness…</small>
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated" id="wf-scan-bar" style="width: 0%" role="progressbar"></div>
+        </div>
       </div>
       <div id="wf-scan-result" class="mt-3 d-none"></div>
     </div>
@@ -202,10 +205,13 @@
         </button>
       </div>
       <div id="wf-export-progress" class="mt-3 d-none">
-        <div class="progress" style="height: 6px;">
-          <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width: 100%"></div>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <small class="text-body-secondary" id="wf-export-step">Starting…</small>
+          <small class="fw-semibold" id="wf-export-pct">0%</small>
         </div>
-        <small class="text-body-secondary">Exporting artifacts…</small>
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" id="wf-export-bar" style="width: 0%" role="progressbar"></div>
+        </div>
       </div>
       <div id="wf-export-result" class="mt-3 d-none"></div>
     </div>
@@ -353,10 +359,13 @@
         </div>
       </div>
       <div id="wf-restore-progress" class="mt-3 d-none">
-        <div class="progress" style="height: 6px;">
-          <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 100%"></div>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <small class="text-body-secondary" id="wf-restore-step">Starting…</small>
+          <small class="fw-semibold" id="wf-restore-pct">0%</small>
         </div>
-        <small class="text-body-secondary" id="wf-restore-progress-text">Running post-transfer restoration…</small>
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" id="wf-restore-bar" style="width: 0%" role="progressbar"></div>
+        </div>
       </div>
       <div id="wf-restore-result" class="mt-3 d-none"></div>
     </div>
@@ -385,10 +394,13 @@
         </button>
       </div>
       <div id="wf-validation-progress" class="mt-3 d-none">
-        <div class="progress" style="height: 6px;">
-          <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" style="width: 100%"></div>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <small class="text-body-secondary" id="wf-validation-step">Starting…</small>
+          <small class="fw-semibold" id="wf-validation-pct">0%</small>
         </div>
-        <small class="text-body-secondary">Scanning in target tenant…</small>
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" id="wf-validation-bar" style="width: 0%" role="progressbar"></div>
+        </div>
       </div>
       <div id="wf-validation-result" class="mt-3 d-none"></div>
     </div>
@@ -447,12 +459,12 @@
 
     <!-- Progress -->
     <div id="cs-progress" class="d-none mb-3">
-      <div class="d-flex align-items-center">
-        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-        <span>Scanning subscriptions and detecting dependencies…</span>
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <small class="text-body-secondary" id="cs-progress-step">Starting…</small>
+        <small class="fw-semibold" id="cs-progress-pct">0%</small>
       </div>
-      <div class="progress mt-2" style="height: 4px;">
-        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
+      <div class="progress" style="height: 4px;">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" id="cs-progress-bar" style="width: 0%" role="progressbar"></div>
       </div>
     </div>
 
@@ -578,6 +590,23 @@ $(function () {
       data: JSON.stringify(data),
       headers: { 'X-CSRFToken': wfState.csrfToken }
     });
+  }
+
+  /**
+   * Update a progress bar, step text, and percentage from API data.
+   * @param {string} prefix - element ID prefix (e.g. 'wf-scan', 'cs-progress')
+   * @param {object} d      - API response with progress_pct, current_step, etc.
+   */
+  function updateProgress(prefix, d) {
+    var pct = d.progress_pct || 0;
+    var step = d.current_step || 'Working…';
+    var stepsInfo = '';
+    if (d.total_steps > 0) {
+      stepsInfo = ' (' + (d.steps_completed || 0) + '/' + d.total_steps + ')';
+    }
+    $('#' + prefix + '-bar').css('width', pct + '%');
+    $('#' + prefix + '-pct').text(pct + '%');
+    $('#' + prefix + '-step').text(step + stepsInfo);
   }
 
   function pollTask(taskId, apiUrl, onComplete, onProgress) {
@@ -722,7 +751,8 @@ $(function () {
             markDone($('#wf-step-scan'));
             lockStep($('#wf-step-scan'));
             unlockStep($('#wf-step-export'));
-          }
+          },
+          function onProgress(d) { updateProgress('wf-scan', d); }
         );
       })
       .fail(function (xhr) {
@@ -802,7 +832,8 @@ $(function () {
             var downloadUrl = '{{ url_for("main.download_bundle", task_id="TASK_ID") }}'
               .replace('TASK_ID', wfState.exportTaskId);
             $('#wf-download-btn').attr('href', downloadUrl).removeClass('disabled');
-          }
+          },
+          function onProgress(d) { updateProgress('wf-export', d); }
         );
       })
       .fail(function (xhr) {
@@ -1074,10 +1105,10 @@ $(function () {
   $('#wf-restore-btn').on('click', function () {
     var $btn = $(this).prop('disabled', true);
     $('#wf-restore-progress').removeClass('d-none');
-    $('#wf-restore-progress-text').text(
+    $('#wf-restore-step').text(
       $('#wf-dry-run-toggle').is(':checked')
-        ? 'Running dry-run simulation…'
-        : 'Running post-transfer restoration…'
+        ? 'Starting dry-run simulation…'
+        : 'Starting post-transfer restoration…'
     );
     $('#wf-restore-result').addClass('d-none').empty();
 
@@ -1161,7 +1192,8 @@ $(function () {
             }
             // Unlock Phase 4
             unlockStep($('#wf-step-validation'));
-          }
+          },
+          function onProgress(d) { updateProgress('wf-restore', d); }
         );
       })
       .fail(function (xhr) {
@@ -1321,7 +1353,8 @@ $(function () {
             $('#wf-step-close').removeClass('opacity-50');
             $('#wf-close-badge').removeClass('bg-secondary').addClass('bg-success')
               .html('<i class="bi bi-check-circle me-1"></i>Complete');
-          }
+          },
+          function onProgress(d) { updateProgress('wf-validation', d); }
         );
       })
       .fail(function (xhr) {
@@ -1386,7 +1419,7 @@ $(function () {
           $('#cs-progress').addClass('d-none');
           $btn.prop('disabled', false);
           renderCrossSubResults(data);
-        });
+        }, function onProgress(d) { updateProgress('cs-progress', d); });
       })
       .fail(function (xhr) {
         $('#cs-progress').addClass('d-none');
