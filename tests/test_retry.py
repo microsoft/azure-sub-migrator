@@ -6,7 +6,6 @@ import pytest
 
 from tenova.retry import _is_retryable, azure_retry, retry_call
 
-
 # ── Fake Azure exceptions ────────────────────────────────────────────
 
 class FakeHttpResponseError(Exception):

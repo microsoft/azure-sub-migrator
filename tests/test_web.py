@@ -7,13 +7,12 @@ headers, API endpoints, and ownership enforcement.
 from __future__ import annotations
 
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from web.app import create_app
 from web.tasks import TaskResult, TaskStatus
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -198,8 +197,6 @@ class TestApiTaskStatus:
 
     def test_ownership_returns_404(self, auth_client):
         """A task owned by someone else should appear as not found."""
-        other_owner = "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"
-        task = _completed_scan_task(owner_id=other_owner)
         # get_task enforces ownership internally; mock it returning None
         with patch("web.routes.get_task", return_value=None):
             resp = auth_client.get(f"/api/task/{FAKE_TASK_ID}")
