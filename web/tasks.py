@@ -100,8 +100,8 @@ def _get_redis():
     """Return a Redis client, or *None* if Redis is unavailable.
 
     Connection strategy (in priority order):
-    1. **REDIS_HOST** → Entra ID (``DefaultAzureCredential``) via the
-       ``redis-entraid`` credential provider.  No secrets to manage.
+    1. **REDIS_HOST** → Entra ID (``DefaultAzureCredential``) with a
+       custom credential provider.  No secrets to manage.
     2. **REDIS_URL**  → traditional ``rediss://`` access-key URL.
        Kept for local development & backward compatibility.
 
@@ -134,18 +134,23 @@ def _get_redis():
         )
 
         if _REDIS_HOST:
-            from redis_entraid.cred_provider import (
-                create_from_default_azure_credential,
-            )
+            from azure.identity import DefaultAzureCredential
 
-            credential_provider = create_from_default_azure_credential(
-                ("https://redis.azure.com/.default",),
-            )
+            _credential = DefaultAzureCredential()
+            _scope = "https://redis.azure.com/.default"
+
+            class _EntraCredProvider(_redis_mod.CredentialProvider):
+                """Entra ID token provider for Azure Managed Redis."""
+
+                def get_credentials(self):
+                    token = _credential.get_token(_scope).token
+                    return None, token  # username=None, password=token
+
             _redis_client = _redis_mod.Redis(
                 host=_REDIS_HOST,
                 port=_REDIS_PORT,
                 ssl=True,
-                credential_provider=credential_provider,
+                credential_provider=_EntraCredProvider(),
                 **_common_opts,
             )
         else:
