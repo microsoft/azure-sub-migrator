@@ -16,6 +16,7 @@ from typing import Any
 from azure.core.credentials import TokenCredential
 
 from tenova.logger import get_logger
+from tenova.retry import azure_retry
 
 logger = get_logger("pre_transfer")
 
@@ -194,6 +195,7 @@ def _export_managed_identities(
 # 4. Policy Assignments
 # ──────────────────────────────────────────────────────────────────────
 
+@azure_retry
 def _export_policy_assignments(
     credential: TokenCredential,
     subscription_id: str,
@@ -226,6 +228,7 @@ def _export_policy_assignments(
 # 5. Custom Policy Definitions
 # ──────────────────────────────────────────────────────────────────────
 
+@azure_retry
 def _export_policy_definitions(
     credential: TokenCredential,
     subscription_id: str,
@@ -259,6 +262,7 @@ def _export_policy_definitions(
 # 6. Resource Locks
 # ──────────────────────────────────────────────────────────────────────
 
+@azure_retry
 def _export_resource_locks(
     credential: TokenCredential,
     subscription_id: str,
@@ -306,6 +310,7 @@ def _export_resource_locks(
 # 7. Key Vault Access Policies
 # ──────────────────────────────────────────────────────────────────────
 
+@azure_retry
 def _export_keyvault_policies(
     credential: TokenCredential,
     subscription_id: str,
