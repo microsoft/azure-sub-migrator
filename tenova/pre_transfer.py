@@ -11,6 +11,7 @@ combined artifacts dict ready for :func:`tenova.bundle.create_bundle`.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from azure.core.credentials import TokenCredential
@@ -29,6 +30,7 @@ def run_pre_transfer(
     credential: TokenCredential,
     subscription_id: str,
     scan_data: dict[str, Any],
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, Any]:
     """Run all pre-transfer exports and return the combined artifacts.
 
@@ -40,12 +42,23 @@ def run_pre_transfer(
         The subscription being migrated.
     scan_data:
         The scan result dict (transfer_safe, requires_action).
+    on_progress:
+        Optional callback ``(step_name, step_number, total_steps)``
+        invoked after each export step completes.
 
     Returns
     -------
     Dict with per-step results and an ``artifacts`` dict containing
     all exported data keyed by artifact name.
     """
+    total_steps = 7
+    step_num = 0
+
+    def _report(name: str) -> None:
+        nonlocal step_num
+        step_num += 1
+        if on_progress:
+            on_progress(name, step_num, total_steps)
     results: dict[str, Any] = {
         "steps": [],
         "artifacts": {},
@@ -61,6 +74,7 @@ def run_pre_transfer(
         lambda: _export_rbac_assignments(credential, subscription_id),
         artifact_key="rbac_assignments",
     )
+    _report("Export RBAC Assignments")
 
     # 2) Custom roles
     _run_step(
@@ -68,6 +82,7 @@ def run_pre_transfer(
         lambda: _export_custom_roles(credential, subscription_id),
         artifact_key="rbac_custom_roles",
     )
+    _report("Export Custom Roles")
 
     # 3) Managed identities
     _run_step(
@@ -75,6 +90,7 @@ def run_pre_transfer(
         lambda: _export_managed_identities(credential, subscription_id),
         artifact_key="managed_identities",
     )
+    _report("Export Managed Identities")
 
     # 4) Policy assignments
     _run_step(
@@ -82,6 +98,7 @@ def run_pre_transfer(
         lambda: _export_policy_assignments(credential, subscription_id),
         artifact_key="policy_assignments",
     )
+    _report("Export Policy Assignments")
 
     # 5) Custom policy definitions
     _run_step(
@@ -89,6 +106,7 @@ def run_pre_transfer(
         lambda: _export_policy_definitions(credential, subscription_id),
         artifact_key="policy_definitions",
     )
+    _report("Export Custom Policy Definitions")
 
     # 6) Resource locks
     _run_step(
@@ -96,6 +114,7 @@ def run_pre_transfer(
         lambda: _export_resource_locks(credential, subscription_id),
         artifact_key="resource_locks",
     )
+    _report("Export Resource Locks")
 
     # 7) Key Vault access policies
     requires_action = scan_data.get("requires_action", [])
@@ -104,6 +123,7 @@ def run_pre_transfer(
         lambda: _export_keyvault_policies(credential, subscription_id, requires_action),
         artifact_key="keyvault_policies",
     )
+    _report("Export Key Vault Access Policies")
 
     # Overall status
     overall = "succeeded" if results["summary"]["failed"] == 0 else "partial"
