@@ -49,6 +49,7 @@ dependencies = [
     "msal~=1.35",
     "cryptography~=46.0",
     "gunicorn~=25.1",
+    "redis~=7.4",
     "fpdf2~=2.8",
     "openpyxl~=3.1",
     "pillow~=12.1",

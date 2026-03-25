@@ -1,8 +1,9 @@
 """Background task runner for long-running scan operations.
 
 Uses threading so the Flask request returns immediately while the scan
-runs in the background.  Results are stored in a simple in-memory dict
-keyed by a task ID.
+runs in the background.  Results are stored in an in-memory dict keyed
+by a task ID, with Redis persistence for completed tasks so results
+survive process restarts and are shared across deployment slots.
 
 Security hardening:
   - Full UUID4 task IDs (122 bits of entropy, not guessable).
@@ -18,7 +19,6 @@ from __future__ import annotations
 
 import json as _json
 import os
-import sqlite3
 import threading
 import time
 import uuid
@@ -78,120 +78,128 @@ class TaskResult:
 ProgressCallback = Callable[[str, int, int], None]
 
 
-# In-memory task store with SQLite persistence.
+# In-memory task store with Redis persistence.
 # Running tasks are kept in memory for speed; on completion they are
-# written to SQLite so results survive process restarts.
+# written to Redis so results survive process restarts and are shared
+# across App Service deployment slots / scale-out instances.
 _tasks: dict[str, TaskResult] = {}
 _tasks_lock = threading.Lock()
 
-# ── SQLite persistence ───────────────────────────────────────────────
+# ── Redis persistence ────────────────────────────────────────────────
 
-_DB_PATH = os.environ.get("TENOVA_TASK_DB", "tasks.db")
-
-
-def _get_db() -> sqlite3.Connection:
-    """Return a connection to the task database (thread-local)."""
-    conn = sqlite3.connect(_DB_PATH, timeout=5)
-    conn.execute("PRAGMA journal_mode=WAL")  # safe for concurrent reads
-    return conn
+_REDIS_URL = os.environ.get("REDIS_URL", "")
+_REDIS_PREFIX = "tenova:task:"
+_redis_client = None  # lazy-initialised
 
 
-def _init_db() -> None:
-    """Create the tasks table if it doesn't exist."""
-    with _get_db() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tasks (
-                task_id       TEXT PRIMARY KEY,
-                owner_id      TEXT,
-                task_type     TEXT,
-                status        TEXT,
-                created_at    TEXT,
-                started_at    TEXT,
-                completed_at  TEXT,
-                result        TEXT,
-                error         TEXT,
-                progress_pct  INTEGER DEFAULT 0,
-                current_step  TEXT DEFAULT '',
-                total_steps   INTEGER DEFAULT 0,
-                steps_completed INTEGER DEFAULT 0
-            )
-            """
+def _get_redis():
+    """Return a Redis client, or None if Redis is unavailable."""
+    global _redis_client  # noqa: PLW0603
+    if _redis_client is not None:
+        return _redis_client
+    if not _REDIS_URL:
+        return None
+    try:
+        import redis
+        _redis_client = redis.from_url(
+            _REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=3,
+            socket_timeout=3,
         )
+        _redis_client.ping()
+        logger.info("Redis persistence connected")
+        return _redis_client
+    except Exception:
+        logger.debug("Redis unavailable — falling back to in-memory only", exc_info=True)
+        return None
 
 
 def _persist_task(task: TaskResult) -> None:
-    """Upsert a task into the SQLite database."""
+    """Write a completed/failed task to Redis with auto-expiry."""
+    r = _get_redis()
+    if r is None:
+        return
     try:
-        with _get_db() as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO tasks
-                    (task_id, owner_id, task_type, status, created_at,
-                     started_at, completed_at, result, error,
-                     progress_pct, current_step, total_steps, steps_completed)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task.task_id,
-                    task.owner_id,
-                    task.task_type,
-                    task.status.value,
-                    task.created_at.isoformat() if task.created_at else None,
-                    task.started_at.isoformat() if task.started_at else None,
-                    task.completed_at.isoformat() if task.completed_at else None,
-                    _json.dumps(task.result, default=str) if task.result else None,
-                    task.error,
-                    task.progress_pct,
-                    task.current_step,
-                    task.total_steps,
-                    task.steps_completed,
-                ),
-            )
+        data = {
+            "task_id": task.task_id,
+            "owner_id": task.owner_id,
+            "task_type": task.task_type,
+            "status": task.status.value,
+            "created_at": task.created_at.isoformat() if task.created_at else "",
+            "started_at": task.started_at.isoformat() if task.started_at else "",
+            "completed_at": task.completed_at.isoformat() if task.completed_at else "",
+            "result": _json.dumps(task.result, default=str) if task.result else "",
+            "error": task.error or "",
+            "progress_pct": str(task.progress_pct),
+            "current_step": task.current_step,
+            "total_steps": str(task.total_steps),
+            "steps_completed": str(task.steps_completed),
+        }
+        key = f"{_REDIS_PREFIX}{task.task_id}"
+        r.hset(key, mapping=data)
+        r.expire(key, TASK_TTL_SECONDS)
     except Exception:
-        logger.debug("Failed to persist task %s", task.task_id, exc_info=True)
+        logger.debug("Failed to persist task %s to Redis", task.task_id, exc_info=True)
 
 
 def _load_persisted_tasks() -> None:
-    """Reload completed/failed tasks from SQLite on startup."""
+    """Reload completed/failed tasks from Redis on startup."""
+    r = _get_redis()
+    if r is None:
+        return
     try:
-        with _get_db() as conn:
-            rows = conn.execute(
-                "SELECT * FROM tasks WHERE status IN ('completed', 'failed')"
-            ).fetchall()
-        for row in rows:
+        keys = r.keys(f"{_REDIS_PREFIX}*")
+        loaded = 0
+        for key in keys:
+            data = r.hgetall(key)
+            if not data or data.get("status") not in ("completed", "failed"):
+                continue
             task = TaskResult(
-                task_id=row[0],
-                owner_id=row[1] or "",
-                task_type=row[2] or "scan",
-                status=TaskStatus(row[3]),
-                created_at=datetime.fromisoformat(row[4]) if row[4] else datetime.now(timezone.utc),
-                started_at=datetime.fromisoformat(row[5]) if row[5] else None,
-                completed_at=datetime.fromisoformat(row[6]) if row[6] else None,
-                result=_json.loads(row[7]) if row[7] else None,
-                error=row[8],
-                progress_pct=row[9] or 0,
-                current_step=row[10] or "",
-                total_steps=row[11] or 0,
-                steps_completed=row[12] or 0,
+                task_id=data.get("task_id", ""),
+                owner_id=data.get("owner_id", ""),
+                task_type=data.get("task_type", "scan"),
+                status=TaskStatus(data["status"]),
+                created_at=(
+                    datetime.fromisoformat(data["created_at"])
+                    if data.get("created_at")
+                    else datetime.now(timezone.utc)
+                ),
+                started_at=(
+                    datetime.fromisoformat(data["started_at"])
+                    if data.get("started_at")
+                    else None
+                ),
+                completed_at=(
+                    datetime.fromisoformat(data["completed_at"])
+                    if data.get("completed_at")
+                    else None
+                ),
+                result=(
+                    _json.loads(data["result"])
+                    if data.get("result")
+                    else None
+                ),
+                error=data.get("error") or None,
+                progress_pct=int(data.get("progress_pct", 0)),
+                current_step=data.get("current_step", ""),
+                total_steps=int(data.get("total_steps", 0)),
+                steps_completed=int(data.get("steps_completed", 0)),
             )
-            # Only load if not already in memory and within TTL
-            if task.task_id not in _tasks:
-                if task.completed_at:
-                    age = (datetime.now(timezone.utc) - task.completed_at).total_seconds()
-                    if age < TASK_TTL_SECONDS:
-                        _tasks[task.task_id] = task
-        logger.info("Loaded %d persisted task(s) from %s", len(rows), _DB_PATH)
+            if task.task_id and task.task_id not in _tasks:
+                _tasks[task.task_id] = task
+                loaded += 1
+        if loaded:
+            logger.info("Loaded %d persisted task(s) from Redis", loaded)
     except Exception:
-        logger.debug("Could not load persisted tasks", exc_info=True)
+        logger.debug("Could not load persisted tasks from Redis", exc_info=True)
 
 
 # Initialise on import
 try:
-    _init_db()
     _load_persisted_tasks()
 except Exception:
-    logger.debug("SQLite task persistence unavailable", exc_info=True)
+    logger.debug("Redis task persistence unavailable", exc_info=True)
 
 
 class _StaticTokenCredential(TokenCredential):
