@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: staging
-      url: https://tenova-app-staging.azurewebsites.net
+      url: https://azure-sub-migrator-staging.azurewebsites.net
 
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +67,7 @@ jobs:
       - name: Deploy to staging slot
         uses: azure/webapps-deploy@v3
         with:
-          app-name: tenova-app
+          app-name: azure-sub-migrator
           slot-name: staging
           package: deploy.zip
 
@@ -75,7 +75,7 @@ jobs:
         run: |
           sleep 30
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://tenova-app-staging.azurewebsites.net/)
+            https://azure-sub-migrator-staging.azurewebsites.net/)
           echo "Staging health check: $STATUS"
           if [ "$STATUS" -ge 500 ]; then
             echo "::error::Staging health check failed with status $STATUS"
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://tenova-app.azurewebsites.net
+      url: https://azure-sub-migrator.azurewebsites.net
 
     steps:
       - name: Login to Azure
@@ -101,7 +101,7 @@ jobs:
         run: |
           az webapp deployment slot swap \
             --resource-group rg-tenova \
-            --name tenova-app \
+            --name azure-sub-migrator \
             --slot staging \
             --target-slot production
 
@@ -109,13 +109,13 @@ jobs:
         run: |
           sleep 30
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://tenova-app.azurewebsites.net/)
+            https://azure-sub-migrator.azurewebsites.net/)
           echo "Production health check: $STATUS"
           if [ "$STATUS" -ge 500 ]; then
             echo "::error::Production health check failed – rolling back"
             az webapp deployment slot swap \
               --resource-group rg-tenova \
-              --name tenova-app \
+              --name azure-sub-migrator \
               --slot staging \
               --target-slot production
             exit 1
