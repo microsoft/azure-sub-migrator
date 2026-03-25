@@ -140,11 +140,24 @@ def _get_redis():
             _scope = "https://redis.azure.com/.default"
 
             class _EntraCredProvider(_redis_mod.CredentialProvider):
-                """Entra ID token provider for Azure Managed Redis."""
+                """Entra ID token provider for Azure Managed Redis.
+
+                Azure Managed Redis expects ``AUTH <objectId> <token>``
+                where *objectId* is the ``oid`` claim inside the JWT.
+                """
 
                 def get_credentials(self):
+                    import base64
+                    import json as _json_mod
+
                     token = _credential.get_token(_scope).token
-                    return None, token  # username=None, password=token
+                    # Decode the JWT payload (2nd segment) to extract 'oid'.
+                    payload = token.split(".")[1]
+                    # Add padding for base64
+                    payload += "=" * (-len(payload) % 4)
+                    claims = _json_mod.loads(base64.urlsafe_b64decode(payload))
+                    oid = claims.get("oid", "")
+                    return oid, token
 
             _redis_client = _redis_mod.Redis(
                 host=_REDIS_HOST,
