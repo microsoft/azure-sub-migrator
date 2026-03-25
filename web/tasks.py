@@ -87,26 +87,73 @@ _tasks_lock = threading.Lock()
 
 # ── Redis persistence ────────────────────────────────────────────────
 
+# Preferred: Entra ID passwordless auth (set REDIS_HOST).
+# Fallback:  access-key URL auth (set REDIS_URL) — for local dev.
+_REDIS_HOST = os.environ.get("REDIS_HOST", "")
+_REDIS_PORT = int(os.environ.get("REDIS_PORT", "10000"))
 _REDIS_URL = os.environ.get("REDIS_URL", "")
 _REDIS_PREFIX = "tenova:task:"
 _redis_client = None  # lazy-initialised
 
 
 def _get_redis():
-    """Return a Redis client, or None if Redis is unavailable."""
+    """Return a Redis client, or *None* if Redis is unavailable.
+
+    Connection strategy (in priority order):
+    1. **REDIS_HOST** → Entra ID (``DefaultAzureCredential``) via the
+       ``redis-entraid`` credential provider.  No secrets to manage.
+    2. **REDIS_URL**  → traditional ``rediss://`` access-key URL.
+       Kept for local development & backward compatibility.
+
+    Resilience settings follow Azure best practices:
+    - 5 s connect / command timeouts
+    - exponential-backoff retry (5 attempts, 0.25 s base, 5 s cap)
+    - ``health_check_interval=30`` keeps idle connections alive
+    """
     global _redis_client  # noqa: PLW0603
     if _redis_client is not None:
         return _redis_client
-    if not _REDIS_URL:
+    if not _REDIS_HOST and not _REDIS_URL:
         return None
     try:
-        import redis
-        _redis_client = redis.from_url(
-            _REDIS_URL,
-            decode_responses=True,
-            socket_connect_timeout=3,
-            socket_timeout=3,
+        import redis as _redis_mod
+        from redis.backoff import ExponentialBackoff
+        from redis.retry import Retry
+
+        _retry = Retry(
+            ExponentialBackoff(cap=5, base=0.25), retries=5
         )
+        _common_opts = dict(
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            retry_on_timeout=True,
+            retry=_retry,
+            retry_on_error=[ConnectionError, TimeoutError, OSError],
+            health_check_interval=30,
+        )
+
+        if _REDIS_HOST:
+            from redis_entraid.cred_provider import (
+                create_from_default_azure_credential,
+            )
+
+            credential_provider = create_from_default_azure_credential(
+                ("https://redis.azure.com/.default",),
+            )
+            _redis_client = _redis_mod.Redis(
+                host=_REDIS_HOST,
+                port=_REDIS_PORT,
+                ssl=True,
+                credential_provider=credential_provider,
+                **_common_opts,
+            )
+        else:
+            _redis_client = _redis_mod.from_url(
+                _REDIS_URL,
+                **_common_opts,
+            )
+
         _redis_client.ping()
         logger.info("Redis persistence connected")
         return _redis_client

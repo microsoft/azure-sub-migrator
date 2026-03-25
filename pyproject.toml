@@ -50,6 +50,7 @@ dependencies = [
     "cryptography~=46.0",
     "gunicorn~=25.1",
     "redis~=7.4",
+    "redis-entraid~=1.1",
     "fpdf2~=2.8",
     "openpyxl~=3.1",
     "pillow~=12.1",

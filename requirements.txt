@@ -32,6 +32,7 @@ msal~=1.35
 cryptography~=46.0
 gunicorn~=25.1
 redis~=7.4
+redis-entraid~=1.1
 
 # Dev dependencies
 pytest~=9.0
