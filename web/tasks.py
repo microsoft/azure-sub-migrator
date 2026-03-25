@@ -16,6 +16,9 @@ Security hardening:
 
 from __future__ import annotations
 
+import json as _json
+import os
+import sqlite3
 import threading
 import time
 import uuid
@@ -75,9 +78,120 @@ class TaskResult:
 ProgressCallback = Callable[[str, int, int], None]
 
 
-# In-memory task store (sufficient for single-instance App Service)
+# In-memory task store with SQLite persistence.
+# Running tasks are kept in memory for speed; on completion they are
+# written to SQLite so results survive process restarts.
 _tasks: dict[str, TaskResult] = {}
 _tasks_lock = threading.Lock()
+
+# ── SQLite persistence ───────────────────────────────────────────────
+
+_DB_PATH = os.environ.get("TENOVA_TASK_DB", "tasks.db")
+
+
+def _get_db() -> sqlite3.Connection:
+    """Return a connection to the task database (thread-local)."""
+    conn = sqlite3.connect(_DB_PATH, timeout=5)
+    conn.execute("PRAGMA journal_mode=WAL")  # safe for concurrent reads
+    return conn
+
+
+def _init_db() -> None:
+    """Create the tasks table if it doesn't exist."""
+    with _get_db() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                task_id       TEXT PRIMARY KEY,
+                owner_id      TEXT,
+                task_type     TEXT,
+                status        TEXT,
+                created_at    TEXT,
+                started_at    TEXT,
+                completed_at  TEXT,
+                result        TEXT,
+                error         TEXT,
+                progress_pct  INTEGER DEFAULT 0,
+                current_step  TEXT DEFAULT '',
+                total_steps   INTEGER DEFAULT 0,
+                steps_completed INTEGER DEFAULT 0
+            )
+            """
+        )
+
+
+def _persist_task(task: TaskResult) -> None:
+    """Upsert a task into the SQLite database."""
+    try:
+        with _get_db() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO tasks
+                    (task_id, owner_id, task_type, status, created_at,
+                     started_at, completed_at, result, error,
+                     progress_pct, current_step, total_steps, steps_completed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task.task_id,
+                    task.owner_id,
+                    task.task_type,
+                    task.status.value,
+                    task.created_at.isoformat() if task.created_at else None,
+                    task.started_at.isoformat() if task.started_at else None,
+                    task.completed_at.isoformat() if task.completed_at else None,
+                    _json.dumps(task.result, default=str) if task.result else None,
+                    task.error,
+                    task.progress_pct,
+                    task.current_step,
+                    task.total_steps,
+                    task.steps_completed,
+                ),
+            )
+    except Exception:
+        logger.debug("Failed to persist task %s", task.task_id, exc_info=True)
+
+
+def _load_persisted_tasks() -> None:
+    """Reload completed/failed tasks from SQLite on startup."""
+    try:
+        with _get_db() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE status IN ('completed', 'failed')"
+            ).fetchall()
+        for row in rows:
+            task = TaskResult(
+                task_id=row[0],
+                owner_id=row[1] or "",
+                task_type=row[2] or "scan",
+                status=TaskStatus(row[3]),
+                created_at=datetime.fromisoformat(row[4]) if row[4] else datetime.now(timezone.utc),
+                started_at=datetime.fromisoformat(row[5]) if row[5] else None,
+                completed_at=datetime.fromisoformat(row[6]) if row[6] else None,
+                result=_json.loads(row[7]) if row[7] else None,
+                error=row[8],
+                progress_pct=row[9] or 0,
+                current_step=row[10] or "",
+                total_steps=row[11] or 0,
+                steps_completed=row[12] or 0,
+            )
+            # Only load if not already in memory and within TTL
+            if task.task_id not in _tasks:
+                if task.completed_at:
+                    age = (datetime.now(timezone.utc) - task.completed_at).total_seconds()
+                    if age < TASK_TTL_SECONDS:
+                        _tasks[task.task_id] = task
+        logger.info("Loaded %d persisted task(s) from %s", len(rows), _DB_PATH)
+    except Exception:
+        logger.debug("Could not load persisted tasks", exc_info=True)
+
+
+# Initialise on import
+try:
+    _init_db()
+    _load_persisted_tasks()
+except Exception:
+    logger.debug("SQLite task persistence unavailable", exc_info=True)
 
 
 class _StaticTokenCredential(TokenCredential):
@@ -285,6 +399,7 @@ def _check_task_timeout(task: TaskResult) -> None:
             f"Azure portal to verify resource state."
         )
         task.completed_at = datetime.now(timezone.utc)
+        _persist_task(task)
         logger.warning(
             "Task %s timed out after %d seconds",
             task.task_id, int(elapsed),
@@ -356,6 +471,7 @@ def _run_scan(task: TaskResult, access_token: str, subscription_id: str) -> None
         logger.exception("Scan task %s failed", task.task_id)
     finally:
         task.completed_at = datetime.now(timezone.utc)
+        _persist_task(task)
 
 
 def _run_readiness(task: TaskResult, access_token: str, subscription_id: str) -> None:
@@ -375,6 +491,7 @@ def _run_readiness(task: TaskResult, access_token: str, subscription_id: str) ->
         logger.exception("Readiness task %s failed", task.task_id)
     finally:
         task.completed_at = datetime.now(timezone.utc)
+        _persist_task(task)
 
 
 def _run_rbac_export(task: TaskResult, access_token: str, subscription_id: str) -> None:
@@ -409,6 +526,7 @@ def _run_rbac_export(task: TaskResult, access_token: str, subscription_id: str) 
         logger.exception("RBAC export task %s failed", task.task_id)
     finally:
         task.completed_at = datetime.now(timezone.utc)
+        _persist_task(task)
 
 
 def _run_post_transfer(
@@ -447,6 +565,7 @@ def _run_post_transfer(
         logger.exception("Post-transfer task %s failed", task.task_id)
     finally:
         task.completed_at = datetime.now(timezone.utc)
+        _persist_task(task)
 
 
 def _run_pre_transfer(
@@ -476,6 +595,7 @@ def _run_pre_transfer(
         logger.exception("Pre-transfer task %s failed", task.task_id)
     finally:
         task.completed_at = datetime.now(timezone.utc)
+        _persist_task(task)
 
 
 def _run_cross_sub_analysis(
@@ -505,6 +625,7 @@ def _run_cross_sub_analysis(
         logger.exception("Cross-sub analysis task %s failed", task.task_id)
     finally:
         task.completed_at = datetime.now(timezone.utc)
+        _persist_task(task)
 
 
 # ──────────────────────────────────────────────────────────────────────

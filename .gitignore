@@ -26,6 +26,7 @@ Thumbs.db
 output/
 migration_output/
 *.bak
+tasks.db
 
 # Test / coverage
 .coverage
