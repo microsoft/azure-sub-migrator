@@ -561,7 +561,9 @@ $(function () {
   var $scanBtn = $('#wf-scan-btn');
 
   function updateSubSelection() {
-    wfState.subId = $subSelect.val() || null;
+    var newSub = $subSelect.val() || null;
+    var changed = wfState.subId !== null && newSub !== wfState.subId;
+    wfState.subId = newSub;
     $scanBtn.prop('disabled', !wfState.subId);
     // Update portal link
     if (wfState.subId) {
@@ -571,6 +573,83 @@ $(function () {
     } else {
       $('#wf-portal-link').attr('href', '#').addClass('disabled');
     }
+    if (changed) resetWorkflow();
+  }
+
+  function resetWorkflow() {
+    // Clear task state
+    wfState.scanTaskId = null;
+    wfState.readinessTaskId = null;
+    wfState.exportTaskId = null;
+    wfState.principalMapping = {};
+    wfState.restoreTaskId = null;
+    wfState.validationTaskId = null;
+
+    // Steps that are always JS-driven: reset to initial locked state
+    var jsSteps = [
+      '#wf-step-export', '#wf-step-bundle',
+      '#wf-step-mapping', '#wf-step-restore',
+      '#wf-step-validation', '#wf-step-close'
+    ];
+    jsSteps.forEach(function (sel) {
+      var $s = $(sel);
+      $s.addClass('opacity-50').css('border-color', '');
+      $s.find('button').prop('disabled', true)
+        .removeClass('btn-outline-success').addClass('btn-warning');
+      // Restore original button text if it was marked done
+      $s.find('button .bi-check-circle').parent().each(function () {
+        // leave alone — the click handler will re-set text
+      });
+    });
+
+    // Clear all result & progress containers
+    $('#wf-scan-result, #wf-export-result, #wf-mapping-result, #wf-restore-result, #wf-validation-result')
+      .addClass('d-none').empty();
+    $('#wf-scan-progress, #wf-export-progress, #wf-mapping-progress, #wf-restore-progress, #wf-validation-progress')
+      .addClass('d-none');
+
+    // Reset Step 1 (scan)
+    var $step1 = $('#wf-step-scan');
+    $step1.removeClass('opacity-50').css('border-color', '');
+    $scanBtn.prop('disabled', false)
+      .removeClass('btn-outline-success').addClass('btn-primary')
+      .html('<i class="bi bi-play-fill me-1"></i>Analyze');
+
+    // Reset Step 4 (upload) — restore upload button if bundle badge is showing
+    var $step4 = $('#wf-step-upload');
+    $step4.css('border-color', '');
+    var $badge4 = $step4.find('.badge.bg-success');
+    if ($badge4.length) {
+      $badge4.replaceWith(
+        '<a href="{{ url_for("main.upload_bundle_page") }}" class="btn btn-outline-warning btn-sm">' +
+        '<i class="bi bi-upload me-1"></i>Upload Bundle</a>'
+      );
+    }
+
+    // Reset Step 5 (target tenant) — restore connect button
+    var $step5 = $('#wf-step-target');
+    $step5.addClass('opacity-50').css('border-color', '');
+    var $badge5 = $step5.find('.badge.bg-success');
+    if ($badge5.length) {
+      $badge5.replaceWith(
+        '<button class="btn btn-warning btn-sm" id="wf-target-btn" disabled>' +
+        '<i class="bi bi-box-arrow-in-right me-1"></i>Connect Target Tenant</button>'
+      );
+    }
+    $('#wf-target-form').addClass('d-none');
+    $step5.find('button').prop('disabled', true);
+
+    // Reset Step 9 badge
+    $('#wf-close-badge').removeClass('bg-success').addClass('bg-secondary').text('Pending');
+
+    // Reset restore button text
+    $('#wf-restore-btn')
+      .html('<i class="bi bi-play-fill me-1"></i>Run Restoration')
+      .removeClass('btn-outline-success').addClass('btn-warning');
+    // Reset validation button
+    $('#wf-validation-btn')
+      .html('<i class="bi bi-play-fill me-1"></i>Run Validation Scan')
+      .removeClass('btn-outline-success').addClass('btn-success');
   }
   $subSelect.on('change', updateSubSelection);
   updateSubSelection();
