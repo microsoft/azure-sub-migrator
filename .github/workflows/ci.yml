@@ -34,7 +34,7 @@ jobs:
         run: python -m pytest tests/ -v --tb=short
 
       - name: Dependency vulnerability scan (pip-audit)
-        run: pip-audit -r requirements.txt --strict
+        run: pip-audit -r requirements.txt --strict --ignore-vuln CVE-2026-4539  # pygments 2.19.2 — no fix available yet
 
       - name: Generate SBOM (CycloneDX)
         if: matrix.python-version == '3.12'
