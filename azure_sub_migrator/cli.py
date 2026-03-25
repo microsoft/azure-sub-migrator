@@ -1,8 +1,11 @@
-"""CLI interface for tenova.
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+"""CLI interface for azure_sub_migrator.
 
 Built with *Click* for a clean, extensible command structure.
 Each major capability (scan, plan, export, transfer, …) is a sub-command
-under the top-level ``tenova`` group.
+under the top-level ``azure-sub-migrator`` group.
 """
 
 from __future__ import annotations
@@ -13,10 +16,10 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from tenova import __version__
-from tenova.auth import AuthMethod, get_credential
-from tenova.config import MigrationConfig
-from tenova.logger import setup_logging
+from azure_sub_migrator import __version__
+from azure_sub_migrator.auth import AuthMethod, get_credential
+from azure_sub_migrator.config import MigrationConfig
+from azure_sub_migrator.logger import setup_logging
 
 console = Console()
 
@@ -25,7 +28,7 @@ console = Console()
 # ──────────────────────────────────────────────────────────────────────
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(version=__version__, prog_name="tenova")
+@click.version_option(version=__version__, prog_name="azure-sub-migrator")
 @click.option(
     "-v", "--verbose",
     count=True,
@@ -72,7 +75,7 @@ def cli(
     client_secret: str | None,
     output_dir: Path | None,
 ) -> None:
-    """Tenova – Azure Tenant-to-Tenant Migration Tool.
+    """Azure Sub Migrator – Azure Tenant-to-Tenant Subscription Migration Tool.
 
     Migrate Azure subscriptions and resources from one Microsoft Entra
     (Azure AD) tenant to another.
@@ -140,7 +143,7 @@ def list_subscriptions(ctx: click.Context) -> None:
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.scanner import list_subscriptions as _list_subs
+    from azure_sub_migrator.scanner import list_subscriptions as _list_subs
 
     console.print("[bold cyan]Fetching subscriptions…[/]")
     subs = _list_subs(credential)
@@ -184,7 +187,7 @@ def scan(ctx: click.Context, subscription_id: str) -> None:
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.scanner import scan_subscription
+    from azure_sub_migrator.scanner import scan_subscription
 
     console.print(f"[bold cyan]Scanning subscription {subscription_id}…[/]")
     report = scan_subscription(credential, subscription_id)
@@ -264,7 +267,7 @@ def plan(ctx: click.Context, subscription_id: str, target_tenant_id: str) -> Non
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.migration_plan import generate_migration_plan
+    from azure_sub_migrator.migration_plan import generate_migration_plan
 
     console.print("[bold cyan]Generating migration plan…[/]")
     output_path = generate_migration_plan(
@@ -297,7 +300,7 @@ def transfer(ctx: click.Context, subscription_id: str, target_tenant_id: str, dr
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.transfer import initiate_transfer
+    from azure_sub_migrator.transfer import initiate_transfer
 
     if dry_run:
         console.print("[yellow]Dry-run mode — no changes will be made.[/]")
@@ -335,7 +338,7 @@ def export_rbac_cmd(ctx: click.Context, subscription_id: str, output_dir: Path) 
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.rbac import export_rbac
+    from azure_sub_migrator.rbac import export_rbac
 
     console.print(f"[bold cyan]Exporting RBAC for subscription {subscription_id}…[/]")
     filepath = export_rbac(credential, subscription_id, output_dir)
@@ -399,7 +402,7 @@ def import_rbac_cmd(
 
     import json
 
-    from tenova.rbac import import_rbac
+    from azure_sub_migrator.rbac import import_rbac
 
     mapping: dict[str, str] | None = None
     if mapping_file:
@@ -458,8 +461,8 @@ def generate_runbook_cmd(ctx: click.Context, subscription_id: str, target_tenant
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.runbook import generate_runbook
-    from tenova.scanner import scan_subscription
+    from azure_sub_migrator.runbook import generate_runbook
+    from azure_sub_migrator.scanner import scan_subscription
 
     console.print(f"[bold cyan]Scanning subscription {subscription_id}…[/]")
     scan_result = scan_subscription(credential, subscription_id)
@@ -500,7 +503,7 @@ def readiness_check_cmd(ctx: click.Context, subscription_id: str) -> None:
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.readiness import check_readiness
+    from azure_sub_migrator.readiness import check_readiness
 
     console.print(f"[bold cyan]Running readiness check for subscription {subscription_id}…[/]")
     result = check_readiness(credential, subscription_id)
@@ -569,7 +572,7 @@ def readiness_check_cmd(ctx: click.Context, subscription_id: str) -> None:
     "--output", "-o",
     type=click.Path(path_type=Path),
     default=None,
-    help="Output path for the migration bundle (.zip). Default: tenova_bundle_<sub>.zip",
+    help="Output path for the migration bundle (.zip). Default: azsm_bundle_<sub>.zip",
 )
 @click.pass_context
 def pre_transfer_cmd(ctx: click.Context, subscription_id: str, output: Path | None) -> None:
@@ -593,9 +596,9 @@ def pre_transfer_cmd(ctx: click.Context, subscription_id: str, output: Path | No
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.bundle import create_bundle
-    from tenova.pre_transfer import run_pre_transfer
-    from tenova.scanner import scan_subscription
+    from azure_sub_migrator.bundle import create_bundle
+    from azure_sub_migrator.pre_transfer import run_pre_transfer
+    from azure_sub_migrator.scanner import scan_subscription
 
     # Step 1: Scan
     console.print(f"[bold cyan]Scanning subscription {subscription_id}…[/]")
@@ -628,14 +631,14 @@ def pre_transfer_cmd(ctx: click.Context, subscription_id: str, output: Path | No
         artifacts=pt_result.get("artifacts", {}),
     )
 
-    bundle_path = output or Path(f"tenova_bundle_{subscription_id[:8]}.zip")
+    bundle_path = output or Path(f"azsm_bundle_{subscription_id[:8]}.zip")
     bundle_path.write_bytes(bundle_bytes)
 
     console.print(f"\n[bold green]✔ Migration bundle saved to:[/] {bundle_path}")
     console.print(f"  Size: {len(bundle_bytes):,} bytes")
     console.print(f"  Artifacts: {len(pt_result.get('artifacts', {}))}")
     console.print("\n[bold yellow]Next step:[/] Transfer the subscription in the Azure Portal,")
-    console.print("  then run [bold]tenova restore[/] with this bundle.")
+    console.print("  then run [bold]azure-sub-migrator restore[/] with this bundle.")
 
 
 @cli.command("restore")
@@ -674,8 +677,8 @@ def restore_cmd(ctx: click.Context, subscription_id: str, bundle: Path, mapping_
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.bundle import BundleError, get_artifact, read_bundle
-    from tenova.post_transfer import run_post_transfer
+    from azure_sub_migrator.bundle import BundleError, get_artifact, read_bundle
+    from azure_sub_migrator.post_transfer import run_post_transfer
 
     # Read bundle
     console.print(f"[bold cyan]Reading migration bundle: {bundle}…[/]")

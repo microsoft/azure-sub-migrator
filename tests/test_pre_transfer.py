@@ -1,10 +1,13 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the pre-transfer automation engine."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tenova.pre_transfer import (
+from azure_sub_migrator.pre_transfer import (
     _export_custom_roles,
     _export_keyvault_policies,
     _export_managed_identities,
@@ -67,7 +70,7 @@ class TestRunStep:
 
 
 class TestExportRbacAssignments:
-    @patch("tenova.rbac.list_role_assignments")
+    @patch("azure_sub_migrator.rbac.list_role_assignments")
     def test_delegates_to_rbac_module(self, mock_list, mock_credential):
         mock_list.return_value = [{"principal_id": "p1"}]
         result = _export_rbac_assignments(mock_credential, "sub-1")
@@ -76,7 +79,7 @@ class TestExportRbacAssignments:
 
 
 class TestExportCustomRoles:
-    @patch("tenova.rbac.list_custom_roles")
+    @patch("azure_sub_migrator.rbac.list_custom_roles")
     def test_delegates_to_rbac_module(self, mock_list, mock_credential):
         mock_list.return_value = [{"name": "CustomRole"}]
         result = _export_custom_roles(mock_credential, "sub-1")
@@ -84,7 +87,7 @@ class TestExportCustomRoles:
 
 
 class TestExportManagedIdentities:
-    @patch("tenova.rbac.list_managed_identities")
+    @patch("azure_sub_migrator.rbac.list_managed_identities")
     def test_delegates_to_rbac_module(self, mock_list, mock_credential):
         mock_list.return_value = [{"name": "mi-1"}]
         result = _export_managed_identities(mock_credential, "sub-1")
@@ -185,13 +188,13 @@ class TestExportKeyvaultPolicies:
 
 
 class TestRunPreTransfer:
-    @patch("tenova.pre_transfer._export_keyvault_policies")
-    @patch("tenova.pre_transfer._export_resource_locks")
-    @patch("tenova.pre_transfer._export_policy_definitions")
-    @patch("tenova.pre_transfer._export_policy_assignments")
-    @patch("tenova.pre_transfer._export_managed_identities")
-    @patch("tenova.pre_transfer._export_custom_roles")
-    @patch("tenova.pre_transfer._export_rbac_assignments")
+    @patch("azure_sub_migrator.pre_transfer._export_keyvault_policies")
+    @patch("azure_sub_migrator.pre_transfer._export_resource_locks")
+    @patch("azure_sub_migrator.pre_transfer._export_policy_definitions")
+    @patch("azure_sub_migrator.pre_transfer._export_policy_assignments")
+    @patch("azure_sub_migrator.pre_transfer._export_managed_identities")
+    @patch("azure_sub_migrator.pre_transfer._export_custom_roles")
+    @patch("azure_sub_migrator.pre_transfer._export_rbac_assignments")
     def test_all_steps_succeed(
         self, mock_rbac, mock_roles, mock_mi, mock_pa, mock_pd, mock_locks, mock_kv,
         mock_credential,
@@ -214,13 +217,13 @@ class TestRunPreTransfer:
         assert "rbac_assignments" in result["artifacts"]
         assert "scan_results" in result["artifacts"]
 
-    @patch("tenova.pre_transfer._export_keyvault_policies")
-    @patch("tenova.pre_transfer._export_resource_locks")
-    @patch("tenova.pre_transfer._export_policy_definitions")
-    @patch("tenova.pre_transfer._export_policy_assignments")
-    @patch("tenova.pre_transfer._export_managed_identities")
-    @patch("tenova.pre_transfer._export_custom_roles")
-    @patch("tenova.pre_transfer._export_rbac_assignments")
+    @patch("azure_sub_migrator.pre_transfer._export_keyvault_policies")
+    @patch("azure_sub_migrator.pre_transfer._export_resource_locks")
+    @patch("azure_sub_migrator.pre_transfer._export_policy_definitions")
+    @patch("azure_sub_migrator.pre_transfer._export_policy_assignments")
+    @patch("azure_sub_migrator.pre_transfer._export_managed_identities")
+    @patch("azure_sub_migrator.pre_transfer._export_custom_roles")
+    @patch("azure_sub_migrator.pre_transfer._export_rbac_assignments")
     def test_partial_on_failure(
         self, mock_rbac, mock_roles, mock_mi, mock_pa, mock_pd, mock_locks, mock_kv,
         mock_credential,
@@ -240,13 +243,13 @@ class TestRunPreTransfer:
         assert result["summary"]["failed"] == 1
         assert result["summary"]["succeeded"] == 6
 
-    @patch("tenova.pre_transfer._export_keyvault_policies")
-    @patch("tenova.pre_transfer._export_resource_locks")
-    @patch("tenova.pre_transfer._export_policy_definitions")
-    @patch("tenova.pre_transfer._export_policy_assignments")
-    @patch("tenova.pre_transfer._export_managed_identities")
-    @patch("tenova.pre_transfer._export_custom_roles")
-    @patch("tenova.pre_transfer._export_rbac_assignments")
+    @patch("azure_sub_migrator.pre_transfer._export_keyvault_policies")
+    @patch("azure_sub_migrator.pre_transfer._export_resource_locks")
+    @patch("azure_sub_migrator.pre_transfer._export_policy_definitions")
+    @patch("azure_sub_migrator.pre_transfer._export_policy_assignments")
+    @patch("azure_sub_migrator.pre_transfer._export_managed_identities")
+    @patch("azure_sub_migrator.pre_transfer._export_custom_roles")
+    @patch("azure_sub_migrator.pre_transfer._export_rbac_assignments")
     def test_includes_scan_data_as_artifact(
         self, mock_rbac, mock_roles, mock_mi, mock_pa, mock_pd, mock_locks, mock_kv,
         mock_credential,

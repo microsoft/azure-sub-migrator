@@ -1,8 +1,11 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Structured audit trail for destructive operations.
 
 Every state-changing action (post-transfer, principal mapping save,
 bundle upload, pre-transfer) is logged as a JSON record to a dedicated
-``tenova.audit`` logger.  In production the handler should be pointed at
+``azure_sub_migrator.audit`` logger.  In production the handler should be pointed at
 a persistent sink (Azure Monitor, file, etc.); the module configures a
 ``StreamHandler`` by default so records are always visible in stdout.
 
@@ -26,7 +29,7 @@ from typing import Any
 
 from flask import request, session
 
-_audit_logger = logging.getLogger("tenova.audit")
+_audit_logger = logging.getLogger("azure_sub_migrator.audit")
 
 # Ensure at least one handler exists so records are never silently dropped.
 if not _audit_logger.handlers:

@@ -1,4 +1,7 @@
-"""Flask application factory for tenova web UI."""
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+"""Flask application factory for azure_sub_migrator web UI."""
 
 from __future__ import annotations
 

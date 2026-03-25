@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Background task runner for long-running scan operations.
 
 Uses threading so the Flask request returns immediately while the scan
@@ -30,13 +33,13 @@ from typing import Any
 
 from azure.core.credentials import AccessToken, TokenCredential
 
-from tenova.cross_sub import analyze_cross_sub_dependencies
-from tenova.logger import get_logger
-from tenova.post_transfer import run_post_transfer
-from tenova.pre_transfer import run_pre_transfer
-from tenova.rbac import export_rbac
-from tenova.readiness import check_readiness
-from tenova.scanner import list_subscriptions, scan_subscription
+from azure_sub_migrator.cross_sub import analyze_cross_sub_dependencies
+from azure_sub_migrator.logger import get_logger
+from azure_sub_migrator.post_transfer import run_post_transfer
+from azure_sub_migrator.pre_transfer import run_pre_transfer
+from azure_sub_migrator.rbac import export_rbac
+from azure_sub_migrator.readiness import check_readiness
+from azure_sub_migrator.scanner import list_subscriptions, scan_subscription
 
 logger = get_logger("tasks")
 
@@ -92,7 +95,7 @@ _tasks_lock = threading.Lock()
 _REDIS_HOST = os.environ.get("REDIS_HOST", "")
 _REDIS_PORT = int(os.environ.get("REDIS_PORT", "10000"))
 _REDIS_URL = os.environ.get("REDIS_URL", "")
-_REDIS_PREFIX = "tenova:task:"
+_REDIS_PREFIX = "azsm:task:"
 _redis_client = None  # lazy-initialised
 
 
@@ -530,7 +533,7 @@ def _run_scan(task: TaskResult, access_token: str, subscription_id: str) -> None
         report = scan_subscription(cred, subscription_id, on_progress=progress)
 
         # Auto-classify readiness from the scan results (no extra API calls)
-        from tenova.readiness import classify_readiness
+        from azure_sub_migrator.readiness import classify_readiness
         progress("Classifying readiness", 6, 7)
         readiness = classify_readiness(report)
         progress("Complete", 7, 7)

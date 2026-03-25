@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Web layer tests for Flask routes.
 
 Covers health checks, authentication guards, input validation, security
@@ -318,7 +321,7 @@ class TestApiClassifyReadiness:
     def test_valid_classify(self, auth_client):
         task = _completed_scan_task()
         with patch("web.routes.get_task", return_value=task):
-            with patch("tenova.readiness.classify_readiness", return_value={"score": 85}):
+            with patch("azure_sub_migrator.readiness.classify_readiness", return_value={"score": 85}):
                 resp = auth_client.post(
                     "/api/classify-readiness",
                     json={"scan_task_id": FAKE_TASK_ID},

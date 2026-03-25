@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """MSAL / Entra ID authentication for the web UI.
 
 Implements the OAuth 2.0 Authorization Code flow so users sign in with
@@ -232,7 +235,7 @@ def logout():
 @login_required
 def target_tenant_login():
     """Start a second OAuth flow targeting the destination tenant."""
-    from tenova.target_tenant import build_target_auth_url
+    from azure_sub_migrator.target_tenant import build_target_auth_url
 
     target_tenant_id = request.form.get("target_tenant_id", "").strip()
     task_id = request.form.get("task_id", "").strip()
@@ -283,7 +286,7 @@ def target_tenant_callback():
         )
         return redirect(url_for("main.dashboard"))
 
-    from tenova.target_tenant import redeem_target_auth_code
+    from azure_sub_migrator.target_tenant import redeem_target_auth_code
 
     target_tenant_id = session.get("target_tenant_id", "")
     redirect_uri = (

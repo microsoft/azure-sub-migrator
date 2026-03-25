@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Flask routes for the migration web UI."""
 
 from __future__ import annotations
@@ -261,7 +264,7 @@ def api_classify_readiness():
     if scan_task is None or scan_task.result is None:
         return jsonify({"error": "No completed scan found"}), 404
 
-    from tenova.readiness import classify_readiness
+    from azure_sub_migrator.readiness import classify_readiness
 
     readiness = classify_readiness(scan_task.result)
     return jsonify({"readiness": readiness})
@@ -351,7 +354,7 @@ def api_get_principal_mapping():
             "needs_target_tenant": True,
         })
 
-    from tenova.principal_map import (
+    from azure_sub_migrator.principal_map import (
         classify_principal,
         extract_principals,
         resolve_source_principals,
@@ -504,7 +507,7 @@ def checklist(task_id: str):
     if task is None or task.result is None:
         return render_template("error.html", message="No completed scan found."), 404
 
-    from tenova.runbook import enrich_with_commands
+    from azure_sub_migrator.runbook import enrich_with_commands
 
     subscription_id = session.get("last_scan_sub", "")
     enriched = enrich_with_commands(task.result, subscription_id)
@@ -584,7 +587,7 @@ def export_runbook(task_id: str):
     if task is None or task.result is None:
         return render_template("error.html", message="No completed scan found."), 404
 
-    from tenova.runbook import generate_runbook
+    from azure_sub_migrator.runbook import generate_runbook
 
     subscription_id = session.get("last_scan_sub", "")
     markdown = generate_runbook(
@@ -605,7 +608,7 @@ def export_pdf(task_id: str):
     if task is None or task.result is None:
         return render_template("error.html", message="No completed scan found."), 404
 
-    from tenova.report_export import generate_pdf
+    from azure_sub_migrator.report_export import generate_pdf
 
     pdf_bytes = generate_pdf(
         scan_result=task.result,
@@ -625,7 +628,7 @@ def export_excel(task_id: str):
     if task is None or task.result is None:
         return render_template("error.html", message="No completed scan found."), 404
 
-    from tenova.report_export import generate_excel
+    from azure_sub_migrator.report_export import generate_excel
 
     excel_bytes = generate_excel(
         scan_result=task.result,
@@ -686,7 +689,7 @@ def principal_mapping(task_id: str):
         rbac_export = rbac_task.result.get("rbac_export", {}).get("export_data", {})
 
     # Extract & resolve principals
-    from tenova.principal_map import extract_principals, resolve_source_principals, suggest_mappings
+    from azure_sub_migrator.principal_map import extract_principals, resolve_source_principals, suggest_mappings
 
     principals: list = []
     if rbac_export:
@@ -901,7 +904,7 @@ def download_bundle(task_id: str):
     if not artifacts:
         return render_template("error.html", message="No artifacts found."), 404
 
-    from tenova.bundle import create_bundle
+    from azure_sub_migrator.bundle import create_bundle
 
     subscription_id = session.get("last_scan_sub", "")
     source_tenant_id = session.get("tenant_id", "")
@@ -916,7 +919,7 @@ def download_bundle(task_id: str):
     response.headers["Content-Type"] = "application/zip"
     sub_short = subscription_id[:8] if subscription_id else "unknown"
     response.headers["Content-Disposition"] = (
-        f"attachment; filename=tenova_bundle_{sub_short}.zip"
+        f"attachment; filename=azsm_bundle_{sub_short}.zip"
     )
     return response
 
@@ -946,7 +949,7 @@ def upload_bundle():
         flash("Please upload a .zip migration bundle.", "danger")
         return redirect(url_for("main.upload_bundle_page"))
 
-    from tenova.bundle import BundleError, read_bundle
+    from azure_sub_migrator.bundle import BundleError, read_bundle
 
     try:
         data = uploaded.read()

@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Resource scanner — lists subscriptions and classifies resources.
 
 Queries the Azure Resource Manager to enumerate every resource in a
@@ -30,9 +33,9 @@ from azure.mgmt.resource.locks import ManagementLockClient
 from azure.mgmt.resource.policy import PolicyClient
 from azure.mgmt.subscription import SubscriptionClient
 
-from tenova.constants import IMPACTED_RESOURCE_TYPES, REQUIRED_ACTIONS, TRANSFER_NOTES
-from tenova.exceptions import ResourceScanError
-from tenova.logger import get_logger
+from azure_sub_migrator.constants import IMPACTED_RESOURCE_TYPES, REQUIRED_ACTIONS, TRANSFER_NOTES
+from azure_sub_migrator.exceptions import ResourceScanError
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("scanner")
 

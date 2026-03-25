@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Cross-subscription dependency analysis.
 
 Scans multiple Azure subscriptions in parallel and identifies
@@ -20,8 +23,8 @@ from typing import Any
 
 from azure.core.credentials import TokenCredential
 
-from tenova.logger import get_logger
-from tenova.scanner import scan_subscription
+from azure_sub_migrator.logger import get_logger
+from azure_sub_migrator.scanner import scan_subscription
 
 logger = get_logger("cross_sub")
 

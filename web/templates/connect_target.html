@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Connect Target Tenant – Tenova{% endblock %}
+{% block title %}Connect Target Tenant – Azure Sub Migrator{% endblock %}
 
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
@@ -80,7 +80,7 @@
         <p class="text-body-secondary mb-3">
           Now that you've <strong>scanned the subscription</strong> (capturing the "before" state) and
           <strong>transferred it</strong> to the target tenant in the Azure portal, sign in with an
-          account in the <strong>target (destination) tenant</strong> so Tenova can reconfigure
+          account in the <strong>target (destination) tenant</strong> so Azure Sub Migrator can reconfigure
           resources there using your scan data.
         </p>
         <p class="text-body-secondary mb-3">
@@ -148,13 +148,13 @@
             <strong>User Access Administrator</strong> roles on the subscription.
           </li>
           <li class="mb-2">
-            The target tenant admin must have <strong>consented</strong> to the Tenova app.
+            The target tenant admin must have <strong>consented</strong> to the Azure Sub Migrator app.
             <a href="{{ url_for('auth.admin_consent') }}" target="_blank">
               Admin consent link <i class="bi bi-box-arrow-up-right"></i>
             </a>
           </li>
           <li>
-            RBAC export should be done <strong>before</strong> the transfer so Tenova
+            RBAC export should be done <strong>before</strong> the transfer so Azure Sub Migrator
             has a record of what to recreate.
           </li>
         </ul>

@@ -1,10 +1,13 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the cross-subscription dependency analysis module."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-from tenova.cross_sub import (
+from azure_sub_migrator.cross_sub import (
     _build_matrix,
     _build_sub_summaries,
     _check_and_append,
@@ -178,14 +181,14 @@ class TestSuggestOrder:
 class TestAnalyzeCrossSubDependencies:
     """Integration test of the full analysis flow (all SDK calls mocked)."""
 
-    @patch("tenova.cross_sub._detect_route_table_refs", return_value=[])
-    @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
-    @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
-    @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
-    @patch("tenova.cross_sub._detect_private_dns_links", return_value=[])
-    @patch("tenova.cross_sub._detect_private_endpoints", return_value=[])
-    @patch("tenova.cross_sub._detect_vnet_peering")
-    @patch("tenova.cross_sub.scan_subscription")
+    @patch("azure_sub_migrator.cross_sub._detect_route_table_refs", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_diagnostic_settings", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_load_balancer_refs", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_nsg_references", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_private_dns_links", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_private_endpoints", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_vnet_peering")
+    @patch("azure_sub_migrator.cross_sub.scan_subscription")
     def test_detects_vnet_peering_dependency(
         self, mock_scan, mock_vnet, mock_pe, mock_dns,
         mock_nsg, mock_lb, mock_diag, mock_rt, mock_credential
@@ -219,14 +222,14 @@ class TestAnalyzeCrossSubDependencies:
         assert len(result["subscriptions"]) == 2
         assert result["suggested_order"][0] == SUB_B  # depended upon
 
-    @patch("tenova.cross_sub._detect_route_table_refs", return_value=[])
-    @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
-    @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
-    @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
-    @patch("tenova.cross_sub._detect_private_dns_links", return_value=[])
-    @patch("tenova.cross_sub._detect_private_endpoints", return_value=[])
-    @patch("tenova.cross_sub._detect_vnet_peering", return_value=[])
-    @patch("tenova.cross_sub.scan_subscription")
+    @patch("azure_sub_migrator.cross_sub._detect_route_table_refs", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_diagnostic_settings", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_load_balancer_refs", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_nsg_references", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_private_dns_links", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_private_endpoints", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_vnet_peering", return_value=[])
+    @patch("azure_sub_migrator.cross_sub.scan_subscription")
     def test_no_dependencies(
         self, mock_scan, mock_vnet, mock_pe, mock_dns,
         mock_nsg, mock_lb, mock_diag, mock_rt, mock_credential
@@ -240,14 +243,14 @@ class TestAnalyzeCrossSubDependencies:
         for s in result["subscriptions"]:
             assert s["total_dependencies"] == 0
 
-    @patch("tenova.cross_sub._detect_route_table_refs", return_value=[])
-    @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
-    @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
-    @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
-    @patch("tenova.cross_sub._detect_private_dns_links", return_value=[])
-    @patch("tenova.cross_sub._detect_private_endpoints", return_value=[])
-    @patch("tenova.cross_sub._detect_vnet_peering", return_value=[])
-    @patch("tenova.cross_sub.scan_subscription")
+    @patch("azure_sub_migrator.cross_sub._detect_route_table_refs", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_diagnostic_settings", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_load_balancer_refs", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_nsg_references", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_private_dns_links", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_private_endpoints", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_vnet_peering", return_value=[])
+    @patch("azure_sub_migrator.cross_sub.scan_subscription")
     def test_scan_failure_for_one_sub_does_not_block(
         self, mock_scan, mock_vnet, mock_pe, mock_dns,
         mock_nsg, mock_lb, mock_diag, mock_rt, mock_credential
@@ -267,14 +270,14 @@ class TestAnalyzeCrossSubDependencies:
         sub_a = next(s for s in result["subscriptions"] if s["subscription_id"] == SUB_A)
         assert sub_a["error"] is not None
 
-    @patch("tenova.cross_sub._detect_route_table_refs", return_value=[])
-    @patch("tenova.cross_sub._detect_diagnostic_settings", return_value=[])
-    @patch("tenova.cross_sub._detect_load_balancer_refs", return_value=[])
-    @patch("tenova.cross_sub._detect_nsg_references", return_value=[])
-    @patch("tenova.cross_sub._detect_private_dns_links", return_value=[])
-    @patch("tenova.cross_sub._detect_private_endpoints", return_value=[])
-    @patch("tenova.cross_sub._detect_vnet_peering", return_value=[])
-    @patch("tenova.cross_sub.scan_subscription")
+    @patch("azure_sub_migrator.cross_sub._detect_route_table_refs", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_diagnostic_settings", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_load_balancer_refs", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_nsg_references", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_private_dns_links", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_private_endpoints", return_value=[])
+    @patch("azure_sub_migrator.cross_sub._detect_vnet_peering", return_value=[])
+    @patch("azure_sub_migrator.cross_sub.scan_subscription")
     def test_three_subs_with_chain(
         self, mock_scan, mock_vnet, mock_pe, mock_dns,
         mock_nsg, mock_lb, mock_diag, mock_rt, mock_credential
@@ -364,7 +367,7 @@ class TestDetectRouteTableRefs:
         from types import SimpleNamespace
         from unittest.mock import MagicMock
 
-        from tenova.cross_sub import _detect_route_table_refs
+        from azure_sub_migrator.cross_sub import _detect_route_table_refs
 
         sub_set = {SUB_A.lower(), SUB_B.lower()}
         subnet = SimpleNamespace(
@@ -397,7 +400,7 @@ class TestDetectRouteTableRefs:
         from types import SimpleNamespace
         from unittest.mock import MagicMock
 
-        from tenova.cross_sub import _detect_route_table_refs
+        from azure_sub_migrator.cross_sub import _detect_route_table_refs
 
         sub_set = {SUB_A.lower(), SUB_B.lower()}
         route = SimpleNamespace(
@@ -431,7 +434,7 @@ class TestDetectRouteTableRefs:
         from types import SimpleNamespace
         from unittest.mock import MagicMock
 
-        from tenova.cross_sub import _detect_route_table_refs
+        from azure_sub_migrator.cross_sub import _detect_route_table_refs
 
         sub_set = {SUB_A.lower(), SUB_B.lower()}
         route = SimpleNamespace(
@@ -466,7 +469,7 @@ class TestDetectRouteTableRefs:
         import sys
         from unittest.mock import MagicMock
 
-        from tenova.cross_sub import _detect_route_table_refs
+        from azure_sub_migrator.cross_sub import _detect_route_table_refs
 
         sub_set = {SUB_A.lower(), SUB_B.lower()}
 

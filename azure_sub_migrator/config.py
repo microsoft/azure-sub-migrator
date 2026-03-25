@@ -1,4 +1,7 @@
-"""Configuration management for tenova."""
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+"""Configuration management for azure_sub_migrator."""
 
 from __future__ import annotations
 
@@ -8,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-from tenova.constants import DEFAULT_OUTPUT_DIR
+from azure_sub_migrator.constants import DEFAULT_OUTPUT_DIR
 
 
 @dataclass

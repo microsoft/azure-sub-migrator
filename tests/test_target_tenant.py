@@ -1,10 +1,13 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the target-tenant OAuth & Graph helpers."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tenova.target_tenant import (
+from azure_sub_migrator.target_tenant import (
     build_target_auth_url,
     get_directory_object,
     redeem_target_auth_code,
@@ -105,7 +108,7 @@ class TestRedeemTargetAuthCode:
 # ──────────────────────────────────────────────────────────────────────
 
 class TestSearchUsers:
-    @patch("tenova.target_tenant.requests.get")
+    @patch("azure_sub_migrator.target_tenant.requests.get")
     def test_returns_users(self, mock_get):
         mock_get.return_value = MagicMock(
             status_code=200,
@@ -117,13 +120,13 @@ class TestSearchUsers:
         assert len(result) == 1
         assert result[0]["displayName"] == "Alice"
 
-    @patch("tenova.target_tenant.requests.get")
+    @patch("azure_sub_migrator.target_tenant.requests.get")
     def test_empty_on_no_params(self, mock_get):
         result = search_users("token")
         assert result == []
         mock_get.assert_not_called()
 
-    @patch("tenova.target_tenant.requests.get")
+    @patch("azure_sub_migrator.target_tenant.requests.get")
     def test_handles_exception(self, mock_get):
         mock_get.side_effect = Exception("network error")
         result = search_users("token", display_name="Bob")
@@ -131,7 +134,7 @@ class TestSearchUsers:
 
 
 class TestSearchGroups:
-    @patch("tenova.target_tenant.requests.get")
+    @patch("azure_sub_migrator.target_tenant.requests.get")
     def test_returns_groups(self, mock_get):
         mock_get.return_value = MagicMock(
             status_code=200,
@@ -145,7 +148,7 @@ class TestSearchGroups:
 
 
 class TestSearchServicePrincipals:
-    @patch("tenova.target_tenant.requests.get")
+    @patch("azure_sub_migrator.target_tenant.requests.get")
     def test_returns_sps(self, mock_get):
         mock_get.return_value = MagicMock(
             status_code=200,
@@ -159,7 +162,7 @@ class TestSearchServicePrincipals:
 
 
 class TestGetDirectoryObject:
-    @patch("tenova.target_tenant.requests.get")
+    @patch("azure_sub_migrator.target_tenant.requests.get")
     def test_returns_object(self, mock_get):
         mock_get.return_value = MagicMock(
             status_code=200,
@@ -170,13 +173,13 @@ class TestGetDirectoryObject:
         result = get_directory_object("token", "obj-1")
         assert result["displayName"] == "Alice"
 
-    @patch("tenova.target_tenant.requests.get")
+    @patch("azure_sub_migrator.target_tenant.requests.get")
     def test_returns_none_on_404(self, mock_get):
         mock_get.return_value = MagicMock(status_code=404)
         result = get_directory_object("token", "missing-id")
         assert result is None
 
-    @patch("tenova.target_tenant.requests.get")
+    @patch("azure_sub_migrator.target_tenant.requests.get")
     def test_returns_none_on_exception(self, mock_get):
         mock_get.side_effect = Exception("fail")
         result = get_directory_object("token", "obj-1")

@@ -1,6 +1,6 @@
-# Tenova
+# Azure Sub Migrator
 
-**Tenova – Azure Tenant-to-Tenant Migration Tool**
+**Azure Sub Migrator – Azure Tenant-to-Tenant Subscription Migration Tool**
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -27,7 +27,7 @@ A modular, open-source tool that helps you migrate Azure subscriptions and resou
 ## Architecture
 
 ```
-tenova/
+azure_sub_migrator/
 ├── __init__.py          # Package metadata
 ├── cli.py               # Click-based CLI entry point
 ├── auth.py              # Authentication (CLI / SP / MI)
@@ -57,8 +57,8 @@ tenova/
 ### Installation
 
 ```bash
-git clone https://github.com/microsoft/tenova.git
-cd tenova
+git clone https://github.com/microsoft/azure-sub-migrator.git
+cd azure-sub-migrator
 
 # Create a virtual environment
 python -m venv .venv
@@ -73,19 +73,19 @@ pip install -e ".[dev]"
 
 ```bash
 # Verify authentication
-tenova login
+azure-sub-migrator login
 
 # List subscriptions
-tenova list-subs
+azure-sub-migrator list-subs
 
 # Scan a subscription for movable vs non-movable resources
-tenova scan -s <subscription-id>
+azure-sub-migrator scan -s <subscription-id>
 
 # Generate a full migration plan with IaC templates
-tenova plan -s <subscription-id> -t <target-tenant-id>
+azure-sub-migrator plan -s <subscription-id> -t <target-tenant-id>
 
 # Initiate subscription transfer (dry-run first!)
-tenova transfer -s <subscription-id> -t <target-tenant-id> --dry-run
+azure-sub-migrator transfer -s <subscription-id> -t <target-tenant-id> --dry-run
 ```
 
 ### Configuration
@@ -98,7 +98,7 @@ You can provide settings via:
 
 ## Web UI
 
-Tenova includes a full Flask + Bootstrap 5 web dashboard.
+Azure Sub Migrator includes a full Flask + Bootstrap 5 web dashboard.
 
 ### Setup
 
@@ -130,12 +130,36 @@ python -m web.wsgi
 ### Running Tests
 
 ```bash
-pytest -v --cov=tenova
+pytest -v --cov=azure_sub_migrator
 ```
 
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Code of Conduct
+
+This project has adopted the
+[Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+For more information see the
+[Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
+contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any
+additional questions or comments.
+
+## Security
+
+If you discover a security vulnerability, please see [SECURITY.md](SECURITY.md)
+for reporting instructions. **Do not open a public GitHub issue for
+security vulnerabilities.**
+
+## Trademarks
+
+This project may contain trademarks or logos for projects, products, or services.
+Authorized use of Microsoft trademarks or logos is subject to and must follow
+[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
+Use of Microsoft trademarks or logos in modified versions of this project must
+not cause confusion or imply Microsoft sponsorship. Any use of third-party
+trademarks or logos are subject to those third-party's policies.
 
 ## License
 

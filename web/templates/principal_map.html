@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Principal Mapping – Tenova{% endblock %}
+{% block title %}Principal Mapping – Azure Sub Migrator{% endblock %}
 
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
@@ -32,7 +32,7 @@
 <div class="alert alert-warning">
   <i class="bi bi-exclamation-triangle me-2"></i>
   <strong>No RBAC export found.</strong> For best results, export RBAC from the scan results page
-  <em>before</em> transferring the subscription. Without it, Tenova can still update Key Vault,
+  <em>before</em> transferring the subscription. Without it, Azure Sub Migrator can still update Key Vault,
   SQL, and App Service settings, but cannot recreate role assignments.
   <br />
   <a href="{{ url_for('main.scan_status', task_id=task_id) }}" class="btn btn-sm btn-outline-warning mt-2">
@@ -133,7 +133,7 @@
   <div class="alert alert-info">
     <i class="bi bi-info-circle me-2"></i>
     No principals to map. This can happen if there was no RBAC export or the export had no role assignments.
-    You can still proceed — Tenova will handle Key Vault, SQL, and other resource-level operations.
+    You can still proceed — Azure Sub Migrator will handle Key Vault, SQL, and other resource-level operations.
   </div>
   {% endif %}
 

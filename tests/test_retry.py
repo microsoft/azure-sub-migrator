@@ -1,10 +1,13 @@
-"""Tests for tenova.retry — Azure SDK retry helpers."""
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+"""Tests for azure_sub_migrator.retry — Azure SDK retry helpers."""
 
 from __future__ import annotations
 
 import pytest
 
-from tenova.retry import _is_retryable, azure_retry, retry_call
+from azure_sub_migrator.retry import _is_retryable, azure_retry, retry_call
 
 # ── Fake Azure exceptions ────────────────────────────────────────────
 
@@ -30,8 +33,8 @@ class FakeClientAuthenticationError(Exception):
 # Monkey-patch real types for isinstance checks
 @pytest.fixture(autouse=True)
 def _patch_azure_types(monkeypatch):
-    """Patch tenova.retry so isinstance checks match our fakes."""
-    import tenova.retry as mod
+    """Patch azure_sub_migrator.retry so isinstance checks match our fakes."""
+    import azure_sub_migrator.retry as mod
     monkeypatch.setattr(mod, "HttpResponseError", FakeHttpResponseError)
     monkeypatch.setattr(mod, "ServiceRequestError", FakeServiceRequestError)
     monkeypatch.setattr(mod, "ServiceResponseError", FakeServiceResponseError)

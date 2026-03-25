@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Constants used across the migration tool.
 
 Classification is based on the official Microsoft documentation for

@@ -3,14 +3,14 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tenova"
+name = "azure-sub-migrator"
 version = "0.1.0"
-description = "Tenova – Azure Tenant-to-Tenant Migration Tool"
+description = "Azure Sub Migrator – Azure Tenant-to-Tenant Subscription Migration Tool"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
-    { name = "LearnAzureWithMo", email = "noreply@example.com" },
+    { name = "Microsoft Corporation" },
 ]
 keywords = ["azure", "migration", "tenant", "entra", "azure-ad"]
 classifiers = [
@@ -65,11 +65,11 @@ dev = [
 ]
 
 [project.scripts]
-tenova = "tenova.cli:cli"
+azure-sub-migrator = "azure_sub_migrator.cli:cli"
 
 [project.urls]
-Homepage = "https://github.com/microsoft/tenova"
-Issues = "https://github.com/microsoft/tenova/issues"
+Homepage = "https://github.com/microsoft/azure-sub-migrator"
+Issues = "https://github.com/microsoft/azure-sub-migrator/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -82,8 +82,8 @@ target-version = "py310"
 select = ["E", "F", "I", "W", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
-"tenova/constants.py" = ["E501"]
-"tenova/runbook.py" = ["E501"]
+"azure_sub_migrator/constants.py" = ["E501"]
+"azure_sub_migrator/runbook.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

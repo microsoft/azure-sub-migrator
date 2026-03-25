@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Migration plan generator.
 
 Orchestrates scanning → classification → report writing.
@@ -10,10 +13,10 @@ from pathlib import Path
 
 from azure.core.credentials import TokenCredential
 
-from tenova.config import MigrationConfig
-from tenova.logger import get_logger
-from tenova.reporter import write_plan_report
-from tenova.scanner import scan_subscription
+from azure_sub_migrator.config import MigrationConfig
+from azure_sub_migrator.logger import get_logger
+from azure_sub_migrator.reporter import write_plan_report
+from azure_sub_migrator.scanner import scan_subscription
 
 logger = get_logger("migration_plan")
 

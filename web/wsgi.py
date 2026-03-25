@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """WSGI entry point for the Flask web application.
 
 Used by gunicorn / Azure App Service.

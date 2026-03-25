@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Migration bundle — portable zip archive for cross-tenant transfer.
 
 A migration bundle is a self-contained zip file that captures all
@@ -29,7 +32,7 @@ import zipfile
 from datetime import datetime, timezone
 from typing import Any
 
-from tenova.logger import get_logger
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("bundle")
 

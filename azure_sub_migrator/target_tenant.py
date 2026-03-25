@@ -1,6 +1,9 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Target-tenant authentication and Microsoft Graph helpers.
 
-After a cross-tenant subscription transfer, Tenova needs to operate in the
+After a cross-tenant subscription transfer, Azure Sub Migrator needs to operate in the
 *target* (destination) tenant — e.g. to recreate RBAC, update Key Vault
 access policies, and discover matching principals.
 
@@ -17,7 +20,7 @@ from typing import Any
 
 import requests
 
-from tenova.logger import get_logger
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("target_tenant")
 

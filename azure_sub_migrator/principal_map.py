@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Principal mapping — match old-tenant identities to new-tenant identities.
 
 During a cross-tenant subscription transfer, all RBAC role-assignment
@@ -26,7 +29,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tenova.logger import get_logger
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("principal_map")
 
@@ -77,7 +80,7 @@ def resolve_source_principals(
 
     Mutates *principals* in-place and returns the same list.
     """
-    from tenova.target_tenant import batch_resolve_objects
+    from azure_sub_migrator.target_tenant import batch_resolve_objects
 
     all_ids = [p["principal_id"] for p in principals if p.get("principal_id")]
     resolved = batch_resolve_objects(source_token, all_ids)
@@ -141,7 +144,7 @@ def suggest_mappings(
 
     Mutates *principals* in-place and returns the same list.
     """
-    from tenova.target_tenant import (
+    from azure_sub_migrator.target_tenant import (
         list_all_groups,
         list_all_service_principals,
         list_all_users,

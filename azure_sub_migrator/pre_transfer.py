@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Pre-transfer automation engine.
 
 Automates every pre-transfer export that the checklist currently tells
@@ -6,7 +9,7 @@ calls Azure SDKs to collect data and returns a JSON-serialisable dict
 that can be included in a migration bundle.
 
 Orchestrator: :func:`run_pre_transfer` runs all exports and returns a
-combined artifacts dict ready for :func:`tenova.bundle.create_bundle`.
+combined artifacts dict ready for :func:`azure_sub_migrator.bundle.create_bundle`.
 """
 
 from __future__ import annotations
@@ -16,8 +19,8 @@ from typing import Any
 
 from azure.core.credentials import TokenCredential
 
-from tenova.logger import get_logger
-from tenova.retry import azure_retry
+from azure_sub_migrator.logger import get_logger
+from azure_sub_migrator.retry import azure_retry
 
 logger = get_logger("pre_transfer")
 
@@ -181,7 +184,7 @@ def _export_rbac_assignments(
     subscription_id: str,
 ) -> list[dict[str, Any]]:
     """Export all role assignments in the subscription."""
-    from tenova.rbac import list_role_assignments
+    from azure_sub_migrator.rbac import list_role_assignments
     return list_role_assignments(credential, subscription_id)
 
 
@@ -194,7 +197,7 @@ def _export_custom_roles(
     subscription_id: str,
 ) -> list[dict[str, Any]]:
     """Export all custom role definitions in the subscription."""
-    from tenova.rbac import list_custom_roles
+    from azure_sub_migrator.rbac import list_custom_roles
     return list_custom_roles(credential, subscription_id)
 
 
@@ -207,7 +210,7 @@ def _export_managed_identities(
     subscription_id: str,
 ) -> list[dict[str, Any]]:
     """Export user-assigned managed identity inventory."""
-    from tenova.rbac import list_managed_identities
+    from azure_sub_migrator.rbac import list_managed_identities
     return list_managed_identities(credential, subscription_id)
 
 

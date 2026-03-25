@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}RBAC Export – Tenova{% endblock %}
+{% block title %}RBAC Export – Azure Sub Migrator{% endblock %}
 
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
@@ -81,7 +81,7 @@
       <ul class="mb-0">
         <li>This export contains <strong>principal IDs from the source tenant</strong>. You'll need a principal mapping file to re-import into the target tenant.</li>
         <li>All role assignments and custom roles are <strong>permanently deleted</strong> during tenant transfer.</li>
-        <li>After transfer, use <code>tenova import-rbac</code> with the exported file and a mapping file to recreate them.</li>
+        <li>After transfer, use <code>azure-sub-migrator import-rbac</code> with the exported file and a mapping file to recreate them.</li>
         <li class="mt-2"><strong>Keep this file safe</strong> — it cannot be regenerated after the transfer.</li>
       </ul>
     </div>

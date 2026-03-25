@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """IaC template generation for impacted resources.
 
 Supports three export formats:
@@ -19,9 +22,9 @@ from typing import Any
 from azure.core.credentials import TokenCredential
 from azure.mgmt.resource import ResourceManagementClient
 
-from tenova.constants import IAC_FORMAT_ARM, IAC_FORMAT_BICEP, IAC_FORMAT_TERRAFORM
-from tenova.exceptions import ExternalToolError, IaCGenerationError
-from tenova.logger import get_logger
+from azure_sub_migrator.constants import IAC_FORMAT_ARM, IAC_FORMAT_BICEP, IAC_FORMAT_TERRAFORM
+from azure_sub_migrator.exceptions import ExternalToolError, IaCGenerationError
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("iac_generator")
 

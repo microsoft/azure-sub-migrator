@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the RBAC export/import module."""
 
 from __future__ import annotations
@@ -5,7 +8,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-from tenova.rbac import (
+from azure_sub_migrator.rbac import (
     export_rbac,
     import_rbac,
     list_custom_roles,
@@ -15,7 +18,7 @@ from tenova.rbac import (
 
 
 class TestListRoleAssignments:
-    @patch("tenova.rbac.AuthorizationManagementClient")
+    @patch("azure_sub_migrator.rbac.AuthorizationManagementClient")
     def test_returns_assignments(self, mock_client_cls, mock_credential):
         ra = MagicMock()
         ra.id = "/subscriptions/s/providers/Microsoft.Authorization/roleAssignments/a1"
@@ -34,7 +37,7 @@ class TestListRoleAssignments:
 
 
 class TestListCustomRoles:
-    @patch("tenova.rbac.AuthorizationManagementClient")
+    @patch("azure_sub_migrator.rbac.AuthorizationManagementClient")
     def test_returns_custom_roles(self, mock_client_cls, mock_credential):
         rd = MagicMock()
         rd.id = "/subscriptions/s/providers/Microsoft.Authorization/roleDefinitions/cr1"
@@ -58,7 +61,7 @@ class TestListCustomRoles:
         assert result[0]["name"] == "Custom Reader"
         assert "Microsoft.Resources/*/read" in result[0]["permissions"][0]["actions"]
 
-    @patch("tenova.rbac.AuthorizationManagementClient")
+    @patch("azure_sub_migrator.rbac.AuthorizationManagementClient")
     def test_empty_when_no_custom_roles(self, mock_client_cls, mock_credential):
         mock_client_cls.return_value.role_definitions.list.return_value = []
 
@@ -68,8 +71,8 @@ class TestListCustomRoles:
 
 
 class TestExportRbac:
-    @patch("tenova.rbac.ManagedServiceIdentityClient")
-    @patch("tenova.rbac.AuthorizationManagementClient")
+    @patch("azure_sub_migrator.rbac.ManagedServiceIdentityClient")
+    @patch("azure_sub_migrator.rbac.AuthorizationManagementClient")
     def test_export_creates_json_file(self, mock_auth_cls, mock_msi_cls, mock_credential, tmp_path):
         # Mock role assignments
         ra = MagicMock()
@@ -96,8 +99,8 @@ class TestExportRbac:
         assert data["role_assignments"][0]["principal_id"] == "p1"
         assert data["summary"]["role_assignment_count"] == 1
 
-    @patch("tenova.rbac.ManagedServiceIdentityClient")
-    @patch("tenova.rbac.AuthorizationManagementClient")
+    @patch("azure_sub_migrator.rbac.ManagedServiceIdentityClient")
+    @patch("azure_sub_migrator.rbac.AuthorizationManagementClient")
     def test_export_includes_custom_roles(self, mock_auth_cls, mock_msi_cls, mock_credential, tmp_path):
         # Mock role assignments — empty
         mock_auth_cls.return_value.role_assignments.list_for_subscription.return_value = []
@@ -124,7 +127,7 @@ class TestExportRbac:
 
 
 class TestImportRbac:
-    @patch("tenova.rbac.AuthorizationManagementClient")
+    @patch("azure_sub_migrator.rbac.AuthorizationManagementClient")
     def test_import_creates_assignments(self, mock_auth_cls, mock_credential, tmp_path):
         export_data = {
             "subscription_id": "sub-1",
@@ -154,7 +157,7 @@ class TestImportRbac:
         assert result["role_assignments_skipped"] == 0
         assert result["role_assignments_failed"] == 0
 
-    @patch("tenova.rbac.AuthorizationManagementClient")
+    @patch("azure_sub_migrator.rbac.AuthorizationManagementClient")
     def test_import_skips_missing_principals(self, mock_auth_cls, mock_credential, tmp_path):
         export_data = {
             "subscription_id": "sub-1",
@@ -181,7 +184,7 @@ class TestImportRbac:
         assert result["role_assignments_skipped"] == 1
         assert result["role_assignments_created"] == 0
 
-    @patch("tenova.rbac.AuthorizationManagementClient")
+    @patch("azure_sub_migrator.rbac.AuthorizationManagementClient")
     def test_import_creates_custom_roles(self, mock_auth_cls, mock_credential, tmp_path):
         export_data = {
             "subscription_id": "sub-1",
@@ -210,7 +213,7 @@ class TestImportRbac:
 
 
 class TestListManagedIdentities:
-    @patch("tenova.rbac.ManagedServiceIdentityClient")
+    @patch("azure_sub_migrator.rbac.ManagedServiceIdentityClient")
     def test_returns_identities(self, mock_client_cls, mock_credential):
         mi = MagicMock()
         mi.id = "/subscriptions/s/resourceGroups/rg1/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id1"

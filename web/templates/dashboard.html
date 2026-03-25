@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Dashboard – Tenova{% endblock %}
+{% block title %}Dashboard – Azure Sub Migrator{% endblock %}
 
 {% block extra_head %}
 <style nonce="{{ csp_nonce }}">
@@ -286,7 +286,7 @@
         <div>
           <i class="bi bi-building-add text-warning me-2"></i>
           <strong>Step 5: Connect to Target Tenant</strong>
-          <div class="text-body-secondary small mt-1">Authenticate in the destination tenant so Tenova can read its directory for auto-mapping.</div>
+          <div class="text-body-secondary small mt-1">Authenticate in the destination tenant so Azure Sub Migrator can read its directory for auto-mapping.</div>
         </div>
         {% if target_tenant_connected %}
         <span class="badge bg-success fs-6" id="wf-target-badge">

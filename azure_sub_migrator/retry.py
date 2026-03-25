@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Retry helpers for transient Azure SDK failures.
 
 Azure Resource Manager commonly returns 429 (throttled) and occasional
@@ -7,7 +10,7 @@ themselves.
 
 Usage::
 
-    from tenova.retry import azure_retry
+    from azure_sub_migrator.retry import azure_retry
 
     @azure_retry
     def _list_resources(...):
@@ -33,7 +36,7 @@ from tenacity import (
     wait_exponential,
 )
 
-logger = logging.getLogger("tenova.retry")
+logger = logging.getLogger("azure_sub_migrator.retry")
 
 
 def _is_retryable(exc: BaseException) -> bool:

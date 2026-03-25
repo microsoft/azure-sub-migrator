@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Post-transfer reconfiguration engine.
 
 After the subscription has landed in the target tenant, this module
@@ -22,7 +25,7 @@ from typing import Any
 
 from azure.core.credentials import TokenCredential
 
-from tenova.logger import get_logger
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("post_transfer")
 

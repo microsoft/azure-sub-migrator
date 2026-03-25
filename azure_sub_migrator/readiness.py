@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Pre-transfer readiness check.
 
 Validates whether a subscription is safe to transfer by scanning for
@@ -23,13 +26,13 @@ from typing import Any
 
 from azure.core.credentials import TokenCredential
 
-from tenova.logger import get_logger
-from tenova.rbac import (
+from azure_sub_migrator.logger import get_logger
+from azure_sub_migrator.rbac import (
     list_custom_roles,
     list_managed_identities,
     list_role_assignments,
 )
-from tenova.scanner import scan_subscription
+from azure_sub_migrator.scanner import scan_subscription
 
 logger = get_logger("readiness")
 
@@ -148,7 +151,7 @@ def check_readiness(
                 "category": "RBAC Role Assignments",
                 "detail": (
                     f"{len(assignments)} role assignment(s) will be PERMANENTLY DELETED. "
-                    f"Run 'tenova export-rbac' to save them before transfer."
+                    f"Run 'azure-sub-migrator export-rbac' to save them before transfer."
                 ),
             })
     except Exception as exc:
@@ -168,7 +171,7 @@ def check_readiness(
                 "category": "Custom Roles",
                 "detail": (
                     f"{len(custom_roles)} custom role(s) will be PERMANENTLY DELETED. "
-                    f"Run 'tenova export-rbac' to save them before transfer."
+                    f"Run 'azure-sub-migrator export-rbac' to save them before transfer."
                 ),
             })
     except Exception:

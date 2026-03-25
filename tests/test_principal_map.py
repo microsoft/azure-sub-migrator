@@ -1,10 +1,13 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the principal mapping module."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-from tenova.principal_map import (
+from azure_sub_migrator.principal_map import (
     _friendly_type,
     build_mapping,
     extract_principals,
@@ -50,7 +53,7 @@ class TestExtractPrincipals:
 # ──────────────────────────────────────────────────────────────────────
 
 class TestResolveSourcePrincipals:
-    @patch("tenova.target_tenant.batch_resolve_objects")
+    @patch("azure_sub_migrator.target_tenant.batch_resolve_objects")
     def test_enriches_principals(self, mock_batch):
         mock_batch.return_value = {
             "p1": {
@@ -70,7 +73,7 @@ class TestResolveSourcePrincipals:
         assert result[0]["upn"] == "alice@source.com"
         assert result[0]["object_type"] == "User"
 
-    @patch("tenova.target_tenant.batch_resolve_objects")
+    @patch("azure_sub_migrator.target_tenant.batch_resolve_objects")
     def test_unknown_when_not_found(self, mock_batch):
         mock_batch.return_value = {}  # empty — nothing resolved
         principals = [
@@ -87,9 +90,9 @@ class TestResolveSourcePrincipals:
 # ──────────────────────────────────────────────────────────────────────
 
 class TestSuggestMappings:
-    @patch("tenova.target_tenant.list_all_service_principals", return_value=[])
-    @patch("tenova.target_tenant.list_all_groups", return_value=[])
-    @patch("tenova.target_tenant.list_all_users")
+    @patch("azure_sub_migrator.target_tenant.list_all_service_principals", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_groups", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_users")
     def test_upn_match_high_confidence(self, mock_users, _g, _sp):
         mock_users.return_value = [
             {"id": "new-p1", "displayName": "Alice", "userPrincipalName": "alice@target.com", "mail": ""},
@@ -108,9 +111,9 @@ class TestSuggestMappings:
         assert result[0]["suggestions"][0]["confidence"] == "high"
         assert result[0]["suggestions"][0]["id"] == "new-p1"
 
-    @patch("tenova.target_tenant.list_all_service_principals", return_value=[])
-    @patch("tenova.target_tenant.list_all_groups")
-    @patch("tenova.target_tenant.list_all_users", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_service_principals", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_groups")
+    @patch("azure_sub_migrator.target_tenant.list_all_users", return_value=[])
     def test_group_match(self, _u, mock_groups, _sp):
         mock_groups.return_value = [
             {"id": "new-g1", "displayName": "DevTeam", "mail": "", "mailNickname": ""},
@@ -128,9 +131,9 @@ class TestSuggestMappings:
         assert len(result[0]["suggestions"]) == 1
         assert result[0]["suggestions"][0]["confidence"] == "medium"
 
-    @patch("tenova.target_tenant.list_all_service_principals")
-    @patch("tenova.target_tenant.list_all_groups", return_value=[])
-    @patch("tenova.target_tenant.list_all_users", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_service_principals")
+    @patch("azure_sub_migrator.target_tenant.list_all_groups", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_users", return_value=[])
     def test_sp_match_by_app_id(self, _u, _g, mock_sps):
         mock_sps.return_value = [
             {"id": "new-sp1", "displayName": "MyApp", "appId": "app-123", "servicePrincipalType": "Application"},
@@ -149,9 +152,9 @@ class TestSuggestMappings:
         assert result[0]["suggestions"][0]["id"] == "new-sp1"
         assert result[0]["suggestions"][0]["confidence"] == "high"
 
-    @patch("tenova.target_tenant.list_all_service_principals")
-    @patch("tenova.target_tenant.list_all_groups", return_value=[])
-    @patch("tenova.target_tenant.list_all_users", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_service_principals")
+    @patch("azure_sub_migrator.target_tenant.list_all_groups", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_users", return_value=[])
     def test_sp_match_by_display_name(self, _u, _g, mock_sps):
         mock_sps.return_value = [
             {"id": "new-sp1", "displayName": "MyApp", "appId": "different-app", "servicePrincipalType": "Application"},
@@ -170,9 +173,9 @@ class TestSuggestMappings:
         assert result[0]["suggestions"][0]["id"] == "new-sp1"
         assert result[0]["suggestions"][0]["confidence"] == "medium"
 
-    @patch("tenova.target_tenant.list_all_service_principals", return_value=[])
-    @patch("tenova.target_tenant.list_all_groups", return_value=[])
-    @patch("tenova.target_tenant.list_all_users", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_service_principals", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_groups", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_users", return_value=[])
     def test_no_suggestions_for_unknown(self, _u, _g, _sp):
         principals = [{
             "principal_id": "old-x",
@@ -185,9 +188,9 @@ class TestSuggestMappings:
         result = suggest_mappings(principals, "target-token")
         assert result[0]["suggestions"] == []
 
-    @patch("tenova.target_tenant.list_all_service_principals", return_value=[])
-    @patch("tenova.target_tenant.list_all_groups", return_value=[])
-    @patch("tenova.target_tenant.list_all_users")
+    @patch("azure_sub_migrator.target_tenant.list_all_service_principals", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_groups", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_users")
     def test_domain_transform_match(self, mock_users, _g, _sp):
         mock_users.return_value = [
             {"id": "new-p1", "displayName": "Alice", "userPrincipalName": "alice@target.com", "mail": ""},
@@ -209,9 +212,9 @@ class TestSuggestMappings:
         assert result[0]["suggestions"][0]["confidence"] == "high"
         assert "domain-transform" in result[0]["suggestions"][0]["match_reason"]
 
-    @patch("tenova.target_tenant.list_all_service_principals", return_value=[])
-    @patch("tenova.target_tenant.list_all_groups", return_value=[])
-    @patch("tenova.target_tenant.list_all_users")
+    @patch("azure_sub_migrator.target_tenant.list_all_service_principals", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_groups", return_value=[])
+    @patch("azure_sub_migrator.target_tenant.list_all_users")
     def test_email_match(self, mock_users, _g, _sp):
         mock_users.return_value = [
             {"id": "new-p1", "displayName": "Bob", "userPrincipalName": "bob@target.com", "mail": "bob@company.com"},

@@ -1,4 +1,7 @@
-"""Authentication module for tenova.
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+"""Authentication module for azure_sub_migrator.
 
 Supports three credential strategies:
   1. Azure CLI credentials (default) — uses the logged-in ``az`` session.
@@ -21,8 +24,8 @@ from azure.identity import (
     ManagedIdentityCredential,
 )
 
-from tenova.exceptions import AuthenticationError
-from tenova.logger import get_logger
+from azure_sub_migrator.exceptions import AuthenticationError
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("auth")
 

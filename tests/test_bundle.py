@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the migration bundle module."""
 
 from __future__ import annotations
@@ -8,7 +11,7 @@ import zipfile
 
 import pytest
 
-from tenova.bundle import (
+from azure_sub_migrator.bundle import (
     BUNDLE_VERSION,
     MAX_BUNDLE_SIZE,
     BundleError,

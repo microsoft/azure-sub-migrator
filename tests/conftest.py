@@ -1,4 +1,7 @@
-"""Shared pytest fixtures for tenova tests."""
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+"""Shared pytest fixtures for azure_sub_migrator tests."""
 
 from __future__ import annotations
 

@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the post-transfer reconfiguration engine."""
 
 from __future__ import annotations
@@ -5,7 +8,7 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock, patch
 
-from tenova.post_transfer import (
+from azure_sub_migrator.post_transfer import (
     _document_managed_identity,
     _filter_by_type,
     _restore_rbac,
@@ -182,11 +185,11 @@ class TestDocumentManagedIdentity:
 # ──────────────────────────────────────────────────────────────────────
 
 class TestRunPostTransfer:
-    @patch("tenova.post_transfer._document_managed_identity")
-    @patch("tenova.post_transfer._update_app_service_auth")
-    @patch("tenova.post_transfer._update_sql_admin")
-    @patch("tenova.post_transfer._update_keyvault")
-    @patch("tenova.post_transfer._restore_rbac")
+    @patch("azure_sub_migrator.post_transfer._document_managed_identity")
+    @patch("azure_sub_migrator.post_transfer._update_app_service_auth")
+    @patch("azure_sub_migrator.post_transfer._update_sql_admin")
+    @patch("azure_sub_migrator.post_transfer._update_keyvault")
+    @patch("azure_sub_migrator.post_transfer._restore_rbac")
     def test_orchestrates_all_operations(
         self,
         mock_rbac,
@@ -225,7 +228,7 @@ class TestRunPostTransfer:
         assert mock_app.called
         assert mock_mi.called
 
-    @patch("tenova.post_transfer._restore_rbac")
+    @patch("azure_sub_migrator.post_transfer._restore_rbac")
     def test_skips_rbac_without_export(self, mock_rbac, mock_credential):
         scan_data = {"requires_action": []}
         result = run_post_transfer(
@@ -234,7 +237,7 @@ class TestRunPostTransfer:
         mock_rbac.assert_not_called()
         assert result["summary"]["total"] == 0
 
-    @patch("tenova.post_transfer._restore_rbac")
+    @patch("azure_sub_migrator.post_transfer._restore_rbac")
     def test_overall_status_on_no_failures(self, mock_rbac, mock_credential):
         mock_rbac.return_value = {"operation": "RBAC", "status": "succeeded"}
 

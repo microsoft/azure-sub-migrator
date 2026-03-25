@@ -1,4 +1,7 @@
-"""Centralized logging configuration for tenova."""
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+"""Centralized logging configuration for azure_sub_migrator."""
 
 from __future__ import annotations
 
@@ -31,7 +34,7 @@ def setup_logging(
     level_map = {0: logging.WARNING, 1: logging.INFO}
     level = level_map.get(verbosity, logging.DEBUG)
 
-    root_logger = logging.getLogger("tenova")
+    root_logger = logging.getLogger("azure_sub_migrator")
     root_logger.setLevel(level)
 
     # Avoid adding duplicate handlers on repeated calls
@@ -55,4 +58,4 @@ def setup_logging(
 
 def get_logger(name: str) -> logging.Logger:
     """Return a child logger under the package namespace."""
-    return logging.getLogger(f"tenova.{name}")
+    return logging.getLogger(f"azure_sub_migrator.{name}")
