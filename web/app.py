@@ -90,13 +90,11 @@ def create_app() -> Flask:
     # Certificate-based credential for MSAL (preferred over client secret).
     # On Azure App Service (Linux), WEBSITE_LOAD_CERTIFICATES causes the PFX
     # to be available at /var/ssl/private/<thumbprint>.p12.
-    cert_thumbprint = os.environ.get(
-        "ENTRA_CERT_THUMBPRINT", "ED41DF079D28200E27940D07BEAC2BEAC7F83194"
-    )
+    cert_thumbprint = os.environ.get("ENTRA_CERT_THUMBPRINT", "")
     app.config["ENTRA_CERT_THUMBPRINT"] = cert_thumbprint
 
-    pfx_path = f"/var/ssl/private/{cert_thumbprint}.p12"
-    if os.path.exists(pfx_path):
+    pfx_path = f"/var/ssl/private/{cert_thumbprint}.p12" if cert_thumbprint else ""
+    if cert_thumbprint and os.path.exists(pfx_path):
         # Running on Azure — load private key from the uploaded PFX
         from cryptography.hazmat.primitives.serialization import (
             Encoding,
