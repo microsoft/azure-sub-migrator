@@ -20,7 +20,8 @@ https://learn.microsoft.com/en-us/azure/role-based-access-control/transfer-subsc
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from azure.core.credentials import TokenCredential
 from azure.mgmt.authorization import AuthorizationManagementClient
