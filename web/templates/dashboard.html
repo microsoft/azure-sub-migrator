@@ -654,6 +654,15 @@ $(function () {
   $subSelect.on('change', updateSubSelection);
   updateSubSelection();
 
+  // Reset workflow on page load (fresh start) and when switching tabs
+  resetWorkflow();
+  $('button[data-bs-toggle="pill"]').on('shown.bs.tab', function (e) {
+    // Reset when leaving OR entering the workflow tab
+    if (e.target.id === 'workflow-tab' || e.relatedTarget && e.relatedTarget.id === 'workflow-tab') {
+      resetWorkflow();
+    }
+  });
+
   // ── Helpers ─────────────────────────────────────────────────────
   function apiPost(url, data) {
     return $.ajax({
