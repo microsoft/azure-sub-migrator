@@ -19,6 +19,7 @@ from flask import (
 )
 
 from web.app import limiter
+from web.audit import audit_log
 from web.auth_web import get_access_token, get_graph_token, login_required
 from web.tasks import (
     fetch_subscriptions,
@@ -304,6 +305,14 @@ def api_start_pre_transfer():
         token, subscription_id, scan_task.result, owner_id=_get_owner_id(),
     )
     session["last_pre_transfer_task"] = task_id
+
+    audit_log(
+        "pre_transfer.start",
+        f"Started pre-transfer export from scan {scan_task_id[:8]}",
+        subscription_id=subscription_id,
+        task_id=task_id,
+    )
+
     return jsonify({"task_id": task_id})
 
 
@@ -436,6 +445,14 @@ def api_start_post_transfer():
         principal_mapping=mapping,
         owner_id=_get_owner_id(),
         dry_run=dry_run,
+    )
+
+    audit_log(
+        "post_transfer.start",
+        f"Started post-transfer {'(dry run) ' if dry_run else ''}with {len(mapping)} principal mappings",
+        subscription_id=subscription_id,
+        task_id=task_id,
+        extra={"dry_run": dry_run, "mapping_count": len(mapping)},
     )
 
     return jsonify({"task_id": task_id})
@@ -772,6 +789,14 @@ def save_principal_mapping(task_id: str):
         owner_id=_get_owner_id(),
     )
 
+    audit_log(
+        "post_transfer.start",
+        f"Started post-transfer via principal mapping save with {len(mapping)} mappings",
+        subscription_id=subscription_id,
+        task_id=pt_task_id,
+        extra={"mapping_count": len(mapping)},
+    )
+
     return redirect(url_for("main.post_transfer_status", task_id=pt_task_id, scan_task_id=task_id))
 
 
@@ -972,6 +997,13 @@ def upload_bundle():
     session["bundle_manifest"] = manifest
     session["bundle_artifacts"] = bundle.get("artifacts", {})
     session["last_scan_sub"] = manifest.get("subscription_id", "")
+
+    audit_log(
+        "bundle.upload",
+        f"Uploaded migration bundle ({len(bundle.get('artifacts', {}))} artifacts)",
+        subscription_id=manifest.get("subscription_id", ""),
+        extra={"filename": uploaded.filename, "artifact_count": len(bundle.get("artifacts", {}))},
+    )
 
     flash(
         f"Bundle loaded: {len(bundle.get('artifacts', {}))} artifacts "
