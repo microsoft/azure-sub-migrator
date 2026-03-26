@@ -1,8 +1,11 @@
-"""CLI interface for tenova.
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+"""CLI interface for azure_sub_migrator.
 
 Built with *Click* for a clean, extensible command structure.
 Each major capability (scan, plan, export, transfer, …) is a sub-command
-under the top-level ``tenova`` group.
+under the top-level ``azure-sub-migrator`` group.
 """
 
 from __future__ import annotations
@@ -13,10 +16,10 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from tenova import __version__
-from tenova.auth import AuthMethod, get_credential
-from tenova.config import MigrationConfig
-from tenova.logger import setup_logging
+from azure_sub_migrator import __version__
+from azure_sub_migrator.auth import AuthMethod, get_credential
+from azure_sub_migrator.config import MigrationConfig
+from azure_sub_migrator.logger import setup_logging
 
 console = Console()
 
@@ -25,7 +28,7 @@ console = Console()
 # ──────────────────────────────────────────────────────────────────────
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(version=__version__, prog_name="tenova")
+@click.version_option(version=__version__, prog_name="azure-sub-migrator")
 @click.option(
     "-v", "--verbose",
     count=True,
@@ -72,7 +75,7 @@ def cli(
     client_secret: str | None,
     output_dir: Path | None,
 ) -> None:
-    """Tenova – Azure Tenant-to-Tenant Migration Tool.
+    """Azure Sub Migrator – Azure Tenant-to-Tenant Subscription Migration Tool.
 
     Migrate Azure subscriptions and resources from one Microsoft Entra
     (Azure AD) tenant to another.
@@ -140,7 +143,7 @@ def list_subscriptions(ctx: click.Context) -> None:
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.scanner import list_subscriptions as _list_subs
+    from azure_sub_migrator.scanner import list_subscriptions as _list_subs
 
     console.print("[bold cyan]Fetching subscriptions…[/]")
     subs = _list_subs(credential)
@@ -184,7 +187,7 @@ def scan(ctx: click.Context, subscription_id: str) -> None:
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.scanner import scan_subscription
+    from azure_sub_migrator.scanner import scan_subscription
 
     console.print(f"[bold cyan]Scanning subscription {subscription_id}…[/]")
     report = scan_subscription(credential, subscription_id)
@@ -264,7 +267,7 @@ def plan(ctx: click.Context, subscription_id: str, target_tenant_id: str) -> Non
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.migration_plan import generate_migration_plan
+    from azure_sub_migrator.migration_plan import generate_migration_plan
 
     console.print("[bold cyan]Generating migration plan…[/]")
     output_path = generate_migration_plan(
@@ -297,7 +300,7 @@ def transfer(ctx: click.Context, subscription_id: str, target_tenant_id: str, dr
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.transfer import initiate_transfer
+    from azure_sub_migrator.transfer import initiate_transfer
 
     if dry_run:
         console.print("[yellow]Dry-run mode — no changes will be made.[/]")
@@ -335,7 +338,7 @@ def export_rbac_cmd(ctx: click.Context, subscription_id: str, output_dir: Path) 
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.rbac import export_rbac
+    from azure_sub_migrator.rbac import export_rbac
 
     console.print(f"[bold cyan]Exporting RBAC for subscription {subscription_id}…[/]")
     filepath = export_rbac(credential, subscription_id, output_dir)
@@ -399,7 +402,7 @@ def import_rbac_cmd(
 
     import json
 
-    from tenova.rbac import import_rbac
+    from azure_sub_migrator.rbac import import_rbac
 
     mapping: dict[str, str] | None = None
     if mapping_file:
@@ -458,8 +461,8 @@ def generate_runbook_cmd(ctx: click.Context, subscription_id: str, target_tenant
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.scanner import scan_subscription
-    from tenova.runbook import generate_runbook
+    from azure_sub_migrator.runbook import generate_runbook
+    from azure_sub_migrator.scanner import scan_subscription
 
     console.print(f"[bold cyan]Scanning subscription {subscription_id}…[/]")
     scan_result = scan_subscription(credential, subscription_id)
@@ -476,7 +479,7 @@ def generate_runbook_cmd(ctx: click.Context, subscription_id: str, target_tenant
     safe_count = len(scan_result.get("transfer_safe", []))
     console.print(f"[bold green]✔ Runbook saved to:[/] {filepath}")
     console.print(f"  {safe_count} transfer-safe, {action_count} requires-action resources.")
-    console.print(f"  Open the Markdown file for step-by-step instructions with CLI commands.")
+    console.print("  Open the Markdown file for step-by-step instructions with CLI commands.")
 
 
 @cli.command("readiness-check")
@@ -500,13 +503,13 @@ def readiness_check_cmd(ctx: click.Context, subscription_id: str) -> None:
         console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
         sys.exit(1)
 
-    from tenova.readiness import check_readiness
+    from azure_sub_migrator.readiness import check_readiness
 
     console.print(f"[bold cyan]Running readiness check for subscription {subscription_id}…[/]")
     result = check_readiness(credential, subscription_id)
 
-    from rich.table import Table
     from rich.panel import Panel
+    from rich.table import Table
 
     # Overall verdict
     if result["ready"]:
@@ -560,6 +563,182 @@ def readiness_check_cmd(ctx: click.Context, subscription_id: str) -> None:
     console.print(
         f"\n[bold]Summary:[/] {len(result['blockers'])} blocker(s), "
         f"{len(result['warnings'])} warning(s), {len(result['info'])} info item(s)."
+    )
+
+
+@cli.command("pre-transfer")
+@click.option("--subscription-id", "-s", required=True, help="Subscription ID to export.")
+@click.option(
+    "--output", "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output path for the migration bundle (.zip). Default: azsm_bundle_<sub>.zip",
+)
+@click.pass_context
+def pre_transfer_cmd(ctx: click.Context, subscription_id: str, output: Path | None) -> None:
+    """Run all pre-transfer exports and save a migration bundle.
+
+    Scans the subscription, exports RBAC, policies, locks, Key Vault
+    access policies, and managed identities, then writes everything to
+    a portable .zip bundle.
+    """
+    cfg: MigrationConfig = ctx.obj["config"]
+    cfg.subscription_id = subscription_id
+
+    try:
+        credential = get_credential(
+            method=cfg.auth_method,
+            tenant_id=cfg.source_tenant_id or None,
+            client_id=cfg.client_id or None,
+            client_secret=cfg.client_secret or None,
+        )
+    except Exception as exc:
+        console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
+        sys.exit(1)
+
+    from azure_sub_migrator.bundle import create_bundle
+    from azure_sub_migrator.pre_transfer import run_pre_transfer
+    from azure_sub_migrator.scanner import scan_subscription
+
+    # Step 1: Scan
+    console.print(f"[bold cyan]Scanning subscription {subscription_id}…[/]")
+    scan_result = scan_subscription(credential, subscription_id)
+
+    # Step 2: Pre-transfer exports
+    console.print("[bold cyan]Running pre-transfer exports…[/]")
+    pt_result = run_pre_transfer(credential, subscription_id, scan_result)
+
+    # Show step results
+    from rich.table import Table
+    table = Table(title="Pre-Transfer Export Results")
+    table.add_column("Step", style="cyan")
+    table.add_column("Status")
+    table.add_column("Items", justify="right")
+    for step in pt_result.get("steps", []):
+        status_style = "green" if step["status"] == "succeeded" else "red"
+        table.add_row(
+            step["name"],
+            f"[{status_style}]{step['status']}[/]",
+            str(step.get("count", "—")),
+        )
+    console.print(table)
+
+    # Step 3: Create bundle
+    source_tenant = cfg.source_tenant_id or "unknown"
+    bundle_bytes = create_bundle(
+        subscription_id=subscription_id,
+        source_tenant_id=source_tenant,
+        artifacts=pt_result.get("artifacts", {}),
+    )
+
+    bundle_path = output or Path(f"azsm_bundle_{subscription_id[:8]}.zip")
+    bundle_path.write_bytes(bundle_bytes)
+
+    console.print(f"\n[bold green]✔ Migration bundle saved to:[/] {bundle_path}")
+    console.print(f"  Size: {len(bundle_bytes):,} bytes")
+    console.print(f"  Artifacts: {len(pt_result.get('artifacts', {}))}")
+    console.print("\n[bold yellow]Next step:[/] Transfer the subscription in the Azure Portal,")
+    console.print("  then run [bold]azure-sub-migrator restore[/] with this bundle.")
+
+
+@cli.command("restore")
+@click.option("--subscription-id", "-s", required=True, help="Subscription ID (now in target tenant).")
+@click.option(
+    "--bundle", "-b",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Path to the migration bundle (.zip).",
+)
+@click.option(
+    "--mapping-file", "-m",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Principal mapping JSON file (old_id → new_id).",
+)
+@click.pass_context
+def restore_cmd(ctx: click.Context, subscription_id: str, bundle: Path, mapping_file: Path | None) -> None:
+    """Restore pre-transfer artifacts from a migration bundle.
+
+    Reads the .zip bundle and re-creates RBAC assignments, policies,
+    locks, and Key Vault access policies in the target tenant.
+    """
+    import json
+
+    cfg: MigrationConfig = ctx.obj["config"]
+
+    try:
+        credential = get_credential(
+            method=cfg.auth_method,
+            tenant_id=cfg.source_tenant_id or None,
+            client_id=cfg.client_id or None,
+            client_secret=cfg.client_secret or None,
+        )
+    except Exception as exc:
+        console.print(f"[bold red]✘ Authentication failed:[/] {exc}")
+        sys.exit(1)
+
+    from azure_sub_migrator.bundle import BundleError, get_artifact, read_bundle
+    from azure_sub_migrator.post_transfer import run_post_transfer
+
+    # Read bundle
+    console.print(f"[bold cyan]Reading migration bundle: {bundle}…[/]")
+    try:
+        bundle_data = read_bundle(bundle.read_bytes())
+    except BundleError as exc:
+        console.print(f"[bold red]✘ Invalid bundle:[/] {exc}")
+        sys.exit(1)
+
+    manifest = bundle_data["manifest"]
+    artifacts = bundle_data["artifacts"]
+    console.print(f"  Bundle version: {manifest.get('bundle_version')}")
+    console.print(f"  Created: {manifest.get('created_at')}")
+    console.print(f"  Artifacts: {len(artifacts)}")
+
+    # Principal mapping
+    mapping: dict[str, str] = {}
+    if mapping_file:
+        mapping = json.loads(mapping_file.read_text(encoding="utf-8"))
+        console.print(f"  Principal mapping: {len(mapping)} entries from {mapping_file}")
+
+    # Build scan_data and rbac_export from bundle
+    scan_data = get_artifact(bundle_data, "scan_results", {})
+    rbac_export = None
+    rbac_assignments = get_artifact(bundle_data, "rbac_assignments")
+    rbac_custom_roles = get_artifact(bundle_data, "rbac_custom_roles")
+    if rbac_assignments or rbac_custom_roles:
+        rbac_export = {
+            "role_assignments": rbac_assignments or [],
+            "custom_roles": rbac_custom_roles or [],
+        }
+
+    # Run restoration
+    console.print("[bold cyan]Running post-transfer restoration…[/]")
+    result = run_post_transfer(
+        credential=credential,
+        subscription_id=subscription_id,
+        scan_data=scan_data,
+        rbac_export=rbac_export,
+        principal_mapping=mapping,
+        bundle_artifacts=artifacts,
+    )
+
+    # Show results
+    from rich.table import Table
+    table = Table(title="Post-Transfer Restoration Results")
+    table.add_column("Operation", style="cyan")
+    table.add_column("Status")
+    for op in result.get("operations", []):
+        status = op.get("status", "unknown")
+        style = "green" if status == "succeeded" else "yellow" if status in ("partial", "manual") else "red"
+        table.add_row(op["operation"], f"[{style}]{status}[/]")
+    console.print(table)
+
+    summary = result.get("summary", {})
+    console.print(
+        f"\n[bold]Summary:[/] {summary.get('total', 0)} operations — "
+        f"{summary.get('succeeded', 0)} succeeded, "
+        f"{summary.get('failed', 0)} failed, "
+        f"{summary.get('skipped', 0)} skipped."
     )
 
 

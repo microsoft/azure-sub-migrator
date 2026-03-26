@@ -1,0 +1,106 @@
+NOTICES AND INFORMATION
+Do Not Translate or Localize
+
+This software incorporates material from third parties.
+Microsoft makes certain open source code available at
+https://3rdpartysource.microsoft.com, or you may send a check or money order
+for US $5.00 to:
+
+  Source Code Compliance Team
+  Microsoft Corporation
+  One Microsoft Way
+  Redmond, WA 98052
+  USA
+
+**Reference the third party software and the associated Microsoft product in
+the memo line of your payment.**
+
+---
+
+## Third-Party Software Notices
+
+The following third-party software is used by Azure Sub Migrator. The licenses below are
+reproduced as required by the respective open source licenses.
+
+### Azure SDK for Python
+- Packages: azure-identity, azure-core, azure-mgmt-resource,
+  azure-mgmt-authorization, azure-mgmt-keyvault, azure-mgmt-msi,
+  azure-mgmt-sql, azure-mgmt-storage, azure-mgmt-web, azure-mgmt-network,
+  azure-mgmt-privatedns, azure-mgmt-monitor, azure-mgmt-resourcegraph,
+  azure-mgmt-subscription, azure-common, azure-mgmt-core, msrest
+- License: MIT
+- https://github.com/Azure/azure-sdk-for-python
+
+### click
+- License: BSD-3-Clause
+- https://github.com/pallets/click
+
+### cryptography
+- License: Apache-2.0 OR BSD-3-Clause
+- https://github.com/pyca/cryptography
+
+### Flask
+- License: BSD-3-Clause
+- https://github.com/pallets/flask
+
+### Flask-Limiter
+- License: MIT
+- https://github.com/alisaifee/flask-limiter
+
+### Flask-Session
+- License: BSD-3-Clause
+- https://github.com/pallets-eco/flask-session
+
+### Flask-WTF
+- License: BSD-3-Clause
+- https://github.com/wtforms/flask-wtf
+
+### fpdf2
+- License: LGPL-3.0-only
+- https://github.com/py-pdf/fpdf2
+
+### gunicorn
+- License: MIT
+- https://github.com/benoitc/gunicorn
+
+### msal
+- License: MIT
+- https://github.com/AzureAD/microsoft-authentication-library-for-python
+
+### openpyxl
+- License: MIT
+- https://foss.heptapod.net/openpyxl/openpyxl
+
+### Pillow
+- License: MIT-CMU
+- https://github.com/python-pillow/Pillow
+
+### PyYAML
+- License: MIT
+- https://github.com/yaml/pyyaml
+
+### redis-py
+- License: MIT
+- https://github.com/redis/redis-py
+
+### requests
+- License: Apache-2.0
+- https://github.com/psf/requests
+
+### rich
+- License: MIT
+- https://github.com/Textualize/rich
+
+### tenacity
+- License: Apache-2.0
+- https://github.com/jd/tenacity
+
+---
+
+### Development Dependencies (not shipped in production)
+
+- pytest (MIT) — https://github.com/pytest-dev/pytest
+- pytest-cov (MIT) — https://github.com/pytest-dev/pytest-cov
+- pytest-mock (MIT) — https://github.com/pytest-dev/pytest-mock
+- ruff (MIT) — https://github.com/astral-sh/ruff
+- mypy (MIT) — https://github.com/python/mypy

@@ -1,5 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Dashboard – Tenova{% endblock %}
+{% block title %}Dashboard – Azure Sub Migrator{% endblock %}
+
+{% block extra_head %}
+<style nonce="{{ csp_nonce }}">
+  .phase-card { transition: all 0.2s; }
+  .phase-card:hover { transform: translateY(-2px); }
+  .step-icon { font-size: 1.4rem; width: 2rem; text-align: center; }
+  .step-pending .step-icon { color: var(--bs-secondary); }
+  .step-running .step-icon { color: var(--bs-info); }
+  .step-done .step-icon { color: var(--bs-success); }
+  .step-failed .step-icon { color: var(--bs-danger); }
+  .step-manual .step-icon { color: var(--bs-warning); }
+  .portal-link { font-size: 0.85rem; }
+  .nav-pills .nav-link { font-weight: 500; }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -16,11 +31,38 @@
   </div>
 </div>
 
+<!-- Tab navigation -->
+<ul class="nav nav-pills mb-4" id="dashTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="subs-tab" data-bs-toggle="pill"
+            data-bs-target="#subs-pane" type="button" role="tab">
+      <i class="bi bi-collection me-1"></i>Subscriptions
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="workflow-tab" data-bs-toggle="pill"
+            data-bs-target="#workflow-pane" type="button" role="tab">
+      <i class="bi bi-arrow-left-right me-1"></i>Migration Workflow
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="crosssub-tab" data-bs-toggle="pill"
+            data-bs-target="#crosssub-pane" type="button" role="tab">
+      <i class="bi bi-diagram-3 me-1"></i>Cross-Sub Dependencies
+    </button>
+  </li>
+</ul>
+
 {% if error %}
 <div class="alert alert-danger">
   <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
 </div>
 {% endif %}
+
+<div class="tab-content" id="dashTabContent">
+
+<!-- ═══════════════════════════════════════ SUBSCRIPTIONS TAB ═══════ -->
+<div class="tab-pane fade show active" id="subs-pane" role="tabpanel" tabindex="0">
 
 {% if subscriptions %}
 <div class="card shadow-sm">
@@ -58,13 +100,7 @@
                   <i class="bi bi-search me-1"></i>Scan
                 </button>
               </form>
-              <form method="POST" action="{{ url_for('main.readiness') }}" class="d-inline">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                <input type="hidden" name="subscription_id" value="{{ sub.subscription_id }}" />
-                <button type="submit" class="btn btn-outline-warning btn-sm">
-                  <i class="bi bi-clipboard-check me-1"></i>Readiness
-                </button>
-              </form>
+
               <form method="POST" action="{{ url_for('main.export_rbac_route') }}" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <input type="hidden" name="subscription_id" value="{{ sub.subscription_id }}" />
@@ -85,12 +121,1514 @@
   <i class="bi bi-info-circle me-2"></i>No subscriptions found. Make sure your account has access.
 </div>
 {% endif %}
+
+</div><!-- end subs-pane -->
+
+<!-- ═══════════════════════════════════════ WORKFLOW TAB ════════════ -->
+<div class="tab-pane fade" id="workflow-pane" role="tabpanel" tabindex="0">
+
+<!-- Subscription selector -->
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="row align-items-end g-3">
+      <div class="col-md-8">
+        <label for="wf-sub-select" class="form-label fw-semibold">
+          <i class="bi bi-collection me-1"></i>Select a subscription to migrate
+        </label>
+        <select id="wf-sub-select" class="form-select">
+          <option value="">— Choose a subscription —</option>
+          {% for sub in subscriptions %}
+          <option value="{{ sub.subscription_id }}"
+                  {% if subscription_id == sub.subscription_id %}selected{% endif %}>
+            {{ sub.display_name }} ({{ sub.subscription_id[:8] }}…)
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4 text-end">
+        <span id="wf-tenant-badge" class="badge bg-secondary">
+          <i class="bi bi-building me-1"></i>Tenant: {{ tenant_id[:8] if tenant_id else '?' }}…
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PHASE 1: PRE-TRANSFER ──────────────────────────────────────── -->
+<div class="card shadow-sm mb-4 border-danger phase-card">
+  <div class="card-header bg-danger bg-opacity-10 fw-semibold">
+    <i class="bi bi-1-circle me-2"></i>Phase 1: Pre-Transfer
+    <span class="badge bg-danger float-end">Before transfer</span>
+  </div>
+  <div class="card-body">
+
+    <!-- Step 1: Analyze Subscription (Scan + Readiness) -->
+    <div class="border rounded p-3 mb-3" id="wf-step-scan">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-search text-primary me-2"></i>
+          <strong>Step 1: Analyze Subscription</strong>
+          <div class="text-body-secondary small mt-1">Scan all resources, detect blockers, and assess transfer readiness.</div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="wf-scan-btn" disabled>
+          <i class="bi bi-play-fill me-1"></i>Analyze
+        </button>
+      </div>
+      <div id="wf-scan-progress" class="mt-3 d-none">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <small class="text-body-secondary" id="wf-scan-step">Starting…</small>
+          <small class="fw-semibold" id="wf-scan-pct">0%</small>
+        </div>
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated" id="wf-scan-bar" style="width: 0%" role="progressbar"></div>
+        </div>
+      </div>
+      <div id="wf-scan-result" class="mt-3 d-none"></div>
+    </div>
+
+    <!-- Step 2: Pre-Transfer Export -->
+    <div class="border rounded p-3 mb-3 opacity-50" id="wf-step-export">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-box-arrow-down text-info me-2"></i>
+          <strong>Step 2: Export Pre-Transfer Artifacts</strong>
+          <div class="text-body-secondary small mt-1">Automated export of RBAC, policies, locks, Key Vault access policies, managed identities.</div>
+        </div>
+        <button class="btn btn-info btn-sm" id="wf-export-btn" disabled>
+          <i class="bi bi-box-arrow-down me-1"></i>Run Export
+        </button>
+      </div>
+      <div id="wf-export-progress" class="mt-3 d-none">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <small class="text-body-secondary" id="wf-export-step">Starting…</small>
+          <small class="fw-semibold" id="wf-export-pct">0%</small>
+        </div>
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" id="wf-export-bar" style="width: 0%" role="progressbar"></div>
+        </div>
+      </div>
+      <div id="wf-export-result" class="mt-3 d-none"></div>
+    </div>
+
+    <!-- Step 3: Download Bundle -->
+    <div class="border rounded p-3 opacity-50" id="wf-step-bundle">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-file-earmark-zip text-success me-2"></i>
+          <strong>Step 3: Download Migration Bundle</strong>
+          <div class="text-body-secondary small mt-1">Save the .zip bundle — you'll upload it after the transfer.</div>
+        </div>
+        <a class="btn btn-success btn-sm disabled" id="wf-download-btn" href="#">
+          <i class="bi bi-download me-1"></i>Download Bundle
+        </a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── PHASE 2: TRANSFER ──────────────────────────────────────────── -->
+<div class="card shadow-sm mb-4 border-primary phase-card">
+  <div class="card-header bg-primary bg-opacity-10 fw-semibold">
+    <i class="bi bi-2-circle me-2"></i>Phase 2: Transfer Subscription
+    <span class="badge bg-primary float-end">Azure Portal</span>
+  </div>
+  <div class="card-body">
+    <div class="border rounded p-3">
+      <div class="d-flex align-items-center gap-3">
+        <i class="bi bi-arrow-right-circle text-primary fs-4"></i>
+        <div class="flex-grow-1">
+          <strong>Change directory in Azure Portal</strong>
+          <div class="text-body-secondary small mt-1">
+            This must be done in the Portal. The link below opens the exact page.
+          </div>
+          <a class="btn btn-warning btn-sm mt-2 disabled" id="wf-portal-link"
+             href="#" target="_blank" rel="noopener">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Open Change Directory in Portal
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PHASE 3: POST-TRANSFER ─────────────────────────────────────── -->
+<div class="card shadow-sm mb-4 border-warning phase-card">
+  <div class="card-header bg-warning bg-opacity-10 fw-semibold">
+    <i class="bi bi-3-circle me-2"></i>Phase 3: Post-Transfer Restoration
+    <span class="badge bg-warning text-dark float-end">After transfer</span>
+  </div>
+  <div class="card-body">
+
+    <!-- Step 4: Upload Bundle -->
+    <div class="border rounded p-3 mb-3" id="wf-step-upload">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-box-arrow-in-up text-warning me-2"></i>
+          <strong>Step 4: Upload Migration Bundle</strong>
+          <div class="text-body-secondary small mt-1">Upload the .zip from Phase 1 to restore artifacts.</div>
+        </div>
+        {% if has_bundle %}
+        <span class="badge bg-success fs-6">
+          <i class="bi bi-check-circle me-1"></i>{{ bundle_manifest.artifacts | length if bundle_manifest and bundle_manifest.artifacts else (session.get('bundle_artifacts', {}) | length) }} artifacts loaded
+        </span>
+        {% else %}
+        <a href="{{ url_for('main.upload_bundle_page') }}" class="btn btn-outline-warning btn-sm">
+          <i class="bi bi-upload me-1"></i>Upload Bundle
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Step 5: Connect to Target Tenant -->
+    <div class="border rounded p-3 mb-3 {{ '' if has_bundle else 'opacity-50' }}" id="wf-step-target">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-building-add text-warning me-2"></i>
+          <strong>Step 5: Connect to Target Tenant</strong>
+          <div class="text-body-secondary small mt-1">Authenticate in the destination tenant so Azure Sub Migrator can read its directory for auto-mapping.</div>
+        </div>
+        {% if target_tenant_connected %}
+        <span class="badge bg-success fs-6" id="wf-target-badge">
+          <i class="bi bi-check-circle me-1"></i>Connected as {{ target_tenant_user.preferred_username or 'user' }}
+        </span>
+        {% else %}
+        <button class="btn btn-warning btn-sm" id="wf-target-btn" {{ '' if has_bundle else 'disabled' }}>
+          <i class="bi bi-box-arrow-in-right me-1"></i>Connect Target Tenant
+        </button>
+        {% endif %}
+      </div>
+      <div id="wf-target-form" class="mt-3 {{ 'd-none' if target_tenant_connected else '' }}">
+        <div class="input-group input-group-sm" style="max-width:500px;">
+          <span class="input-group-text"><i class="bi bi-key"></i></span>
+          <input type="text" class="form-control" id="wf-target-tenant-id"
+                 placeholder="Enter target tenant ID (UUID)" pattern="[0-9a-fA-F-]{36}">
+          <button class="btn btn-warning" id="wf-target-connect-btn" type="button">
+            <i class="bi bi-arrow-right me-1"></i>Connect
+          </button>
+        </div>
+        <small class="text-body-secondary mt-1 d-block">
+          Find your target tenant ID in the Azure Portal → Entra ID → Overview → Tenant ID.
+        </small>
+      </div>
+    </div>
+
+    <!-- Step 6: Principal Mapping -->
+    <div class="border rounded p-3 mb-3 {{ '' if target_tenant_connected else 'opacity-50' }}" id="wf-step-mapping">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-people text-warning me-2"></i>
+          <strong>Step 6: Principal Mapping</strong>
+          <div class="text-body-secondary small mt-1">Map source-tenant principals to target tenant equivalents.</div>
+        </div>
+        <button class="btn btn-warning btn-sm" id="wf-mapping-btn" {{ '' if target_tenant_connected else 'disabled' }}>
+          <i class="bi bi-people me-1"></i>Load Mapping
+        </button>
+      </div>
+      <div id="wf-mapping-progress" class="mt-3 d-none">
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 100%"></div>
+        </div>
+        <small class="text-body-secondary">Extracting principals &amp; auto-matching against target directory…</small>
+      </div>
+      <div id="wf-mapping-result" class="mt-3 d-none"></div>
+    </div>
+
+    <!-- Step 7: Run Restoration -->
+    <div class="border rounded p-3 opacity-50" id="wf-step-restore">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-gear text-warning me-2"></i>
+          <strong>Step 7: Automated Restoration</strong>
+          <div class="text-body-secondary small mt-1">RBAC, policies, locks, Key Vault, managed identities, storage keys.</div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <div class="form-check form-switch me-2" title="Simulate all operations without making any Azure API changes">
+            <input class="form-check-input" type="checkbox" id="wf-dry-run-toggle">
+            <label class="form-check-label small text-body-secondary" for="wf-dry-run-toggle">Dry Run</label>
+          </div>
+          <button class="btn btn-warning btn-sm" id="wf-restore-btn" disabled>
+            <i class="bi bi-play-fill me-1"></i>Run Restoration
+          </button>
+        </div>
+      </div>
+      <div id="wf-restore-progress" class="mt-3 d-none">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <small class="text-body-secondary" id="wf-restore-step">Starting…</small>
+          <small class="fw-semibold" id="wf-restore-pct">0%</small>
+        </div>
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" id="wf-restore-bar" style="width: 0%" role="progressbar"></div>
+        </div>
+      </div>
+      <div id="wf-restore-result" class="mt-3 d-none"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── PHASE 4: VALIDATION ────────────────────────────────────────── -->
+<div class="card shadow-sm mb-4 border-success phase-card">
+  <div class="card-header bg-success bg-opacity-10 fw-semibold">
+    <i class="bi bi-4-circle me-2"></i>Phase 4: Validation
+    <span class="badge bg-success float-end">Verify</span>
+  </div>
+  <div class="card-body">
+
+    <!-- Step 8: Validation Scan -->
+    <div class="border rounded p-3 mb-3 opacity-50" id="wf-step-validation">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-search text-success me-2"></i>
+          <strong>Step 8: Validation Scan</strong>
+          <div class="text-body-secondary small mt-1">Re-scan in the target tenant to verify resources are operational.</div>
+        </div>
+        <button class="btn btn-success btn-sm" id="wf-validation-btn" disabled>
+          <i class="bi bi-play-fill me-1"></i>Run Validation Scan
+        </button>
+      </div>
+      <div id="wf-validation-progress" class="mt-3 d-none">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <small class="text-body-secondary" id="wf-validation-step">Starting…</small>
+          <small class="fw-semibold" id="wf-validation-pct">0%</small>
+        </div>
+        <div class="progress" style="height: 6px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" id="wf-validation-bar" style="width: 0%" role="progressbar"></div>
+        </div>
+      </div>
+      <div id="wf-validation-result" class="mt-3 d-none"></div>
+    </div>
+
+    <!-- Step 9: Close Maintenance Window -->
+    <div class="border rounded p-3 opacity-50" id="wf-step-close">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <i class="bi bi-check2-all text-success me-2"></i>
+          <strong>Step 9: Migration Complete</strong>
+          <div class="text-body-secondary small mt-1">Confirm migration complete, notify stakeholders, close maintenance window.</div>
+        </div>
+        <span class="badge bg-secondary" id="wf-close-badge">Pending</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</div><!-- end workflow-pane -->
+
+<!-- ═══════════════════════════════════════ CROSS-SUB DEPENDENCIES TAB ═══ -->
+<div class="tab-pane fade" id="crosssub-pane" role="tabpanel" tabindex="0">
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">
+    <i class="bi bi-diagram-3 me-2"></i>Cross-Subscription Dependency Analysis
+  </div>
+  <div class="card-body">
+    <p class="text-secondary mb-3">
+      Select two or more subscriptions to scan for cross-subscription dependencies — VNet peering,
+      private endpoints, DNS zone links, diagnostic settings, and embedded resource references.
+    </p>
+
+    <!-- Multi-select subscription picker -->
+    <div class="row g-3 mb-3">
+      <div class="col-md-8">
+        <label for="cs-sub-select" class="form-label fw-semibold">
+          <i class="bi bi-collection me-1"></i>Select subscriptions to analyze
+        </label>
+        <select id="cs-sub-select" class="form-select" multiple size="5">
+          {% for sub in subscriptions %}
+          <option value="{{ sub.subscription_id }}">
+            {{ sub.display_name }} ({{ sub.subscription_id[:8] }}…)
+          </option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Hold <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> to select multiple.</div>
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <button id="cs-start-btn" class="btn btn-primary w-100" disabled>
+          <i class="bi bi-diagram-3 me-1"></i>Analyze Dependencies
+        </button>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div id="cs-progress" class="d-none mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <small class="text-body-secondary" id="cs-progress-step">Starting…</small>
+        <small class="fw-semibold" id="cs-progress-pct">0%</small>
+      </div>
+      <div class="progress" style="height: 4px;">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" id="cs-progress-bar" style="width: 0%" role="progressbar"></div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="cs-results" class="d-none">
+
+      <!-- Summary cards -->
+      <div class="row g-3 mb-4" id="cs-summary-cards"></div>
+
+      <!-- Dependency matrix -->
+      <div class="card mb-4" id="cs-matrix-card">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-grid-3x3 me-1"></i>Dependency Matrix
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0" id="cs-matrix-table">
+              <thead id="cs-matrix-head"></thead>
+              <tbody id="cs-matrix-body"></tbody>
+            </table>
+          </div>
+          <div class="px-3 py-2 small text-secondary border-top" style="background:rgba(0,0,0,.15)">
+            <i class="bi bi-info-circle me-1"></i>
+            Each cell shows the number of dependencies <strong>from</strong> the row subscription <strong>to</strong> the column subscription.
+            <span class="badge bg-warning text-dark ms-1">N</span> = N dependencies detected &nbsp;·&nbsp;
+            <span class="fw-semibold">0</span> = no dependencies &nbsp;·&nbsp;
+            <span class="fw-semibold">—</span> = same subscription.
+          </div>
+        </div>
+      </div>
+
+      <!-- Suggested transfer order -->
+      <div class="card mb-4" id="cs-order-card">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-sort-numeric-down me-1"></i>Suggested Transfer Order
+        </div>
+        <div class="card-body">
+          <ol id="cs-order-list" class="mb-0"></ol>
+        </div>
+      </div>
+
+      <!-- Dependency details table -->
+      <div class="card mb-4" id="cs-deps-card">
+        <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-link-45deg me-1"></i>Dependency Details</span>
+          <span id="cs-dep-count" class="badge bg-primary"></span>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="cs-deps-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>From (Source Sub)</th>
+                  <th>To (Target Sub)</th>
+                  <th>Source Resource</th>
+                  <th>Impact</th>
+                </tr>
+              </thead>
+              <tbody id="cs-deps-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end cs-results -->
+  </div>
+</div>
+
+</div><!-- end crosssub-pane -->
+
+</div><!-- end tab-content -->
 {% endblock %}
 
 {% block extra_scripts %}
 <script nonce="{{ csp_nonce }}">
-  $(function () {
-    $('#subsTable').DataTable({ paging: false, info: false });
+$(function () {
+  $('#subsTable').DataTable({ paging: false, info: false });
+
+  // Auto-switch to workflow tab if ?tab=workflow in URL
+  var urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('tab') === 'workflow') {
+    $('#workflow-tab').tab('show');
+  }
+
+  // ── Workflow state ──────────────────────────────────────────────
+  var wfState = {
+    subId: null,
+    scanTaskId: null,
+    readinessTaskId: null,
+    exportTaskId: null,
+    principalMapping: {},
+    restoreTaskId: null,
+    validationTaskId: null,
+    csrfToken: '{{ csrf_token() }}'
+  };
+
+  // ── Subscription selector ──────────────────────────────────────
+  var $subSelect = $('#wf-sub-select');
+  var $scanBtn = $('#wf-scan-btn');
+
+  function updateSubSelection() {
+    var newSub = $subSelect.val() || null;
+    var changed = wfState.subId !== null && newSub !== wfState.subId;
+    wfState.subId = newSub;
+    $scanBtn.prop('disabled', !wfState.subId);
+    // Update portal link
+    if (wfState.subId) {
+      $('#wf-portal-link')
+        .attr('href', 'https://portal.azure.com/#@/resource/subscriptions/' + wfState.subId + '/changeDirectory')
+        .removeClass('disabled');
+    } else {
+      $('#wf-portal-link').attr('href', '#').addClass('disabled');
+    }
+    if (changed) resetWorkflow();
+  }
+
+  function resetWorkflow() {
+    // Server-side session flags — these persist across page loads
+    var serverHasBundle = {{ 'true' if has_bundle else 'false' }};
+    var serverTargetConnected = {{ 'true' if target_tenant_connected else 'false' }};
+
+    // Clear task state
+    wfState.scanTaskId = null;
+    wfState.readinessTaskId = null;
+    wfState.exportTaskId = null;
+    wfState.principalMapping = {};
+    wfState.restoreTaskId = null;
+    wfState.validationTaskId = null;
+
+    // Steps that are always JS-driven: reset to initial locked state
+    // Exclude #wf-step-mapping if server says target tenant is connected
+    var jsSteps = [
+      '#wf-step-export', '#wf-step-bundle',
+      '#wf-step-restore',
+      '#wf-step-validation', '#wf-step-close'
+    ];
+    if (!serverTargetConnected) {
+      jsSteps.push('#wf-step-mapping');
+    }
+    jsSteps.forEach(function (sel) {
+      var $s = $(sel);
+      $s.addClass('opacity-50').css('border-color', '');
+      $s.find('button').prop('disabled', true)
+        .removeClass('btn-outline-success').addClass('btn-warning');
+      // Restore original button text if it was marked done
+      $s.find('button .bi-check-circle').parent().each(function () {
+        // leave alone — the click handler will re-set text
+      });
+    });
+
+    // Clear all result & progress containers
+    $('#wf-scan-result, #wf-export-result, #wf-mapping-result, #wf-restore-result, #wf-validation-result')
+      .addClass('d-none').empty();
+    $('#wf-scan-progress, #wf-export-progress, #wf-mapping-progress, #wf-restore-progress, #wf-validation-progress')
+      .addClass('d-none');
+
+    // Reset Step 1 (scan)
+    var $step1 = $('#wf-step-scan');
+    $step1.removeClass('opacity-50').css('border-color', '');
+    $scanBtn.prop('disabled', false)
+      .removeClass('btn-outline-success').addClass('btn-primary')
+      .html('<i class="bi bi-play-fill me-1"></i>Analyze');
+
+    // Reset Step 4 (upload) — only if the server says no bundle in session
+    var $step4 = $('#wf-step-upload');
+    $step4.css('border-color', '');
+    if (!serverHasBundle) {
+      var $badge4 = $step4.find('.badge.bg-success');
+      if ($badge4.length) {
+        $badge4.replaceWith(
+          '<a href="{{ url_for("main.upload_bundle_page") }}" class="btn btn-outline-warning btn-sm">' +
+          '<i class="bi bi-upload me-1"></i>Upload Bundle</a>'
+        );
+      }
+    }
+
+    // Reset Step 5 (target tenant) — only if server says not connected
+    var $step5 = $('#wf-step-target');
+    if (!serverHasBundle) {
+      $step5.addClass('opacity-50').css('border-color', '');
+      var $badge5 = $step5.find('.badge.bg-success');
+      if ($badge5.length) {
+        $badge5.replaceWith(
+          '<button class="btn btn-warning btn-sm" id="wf-target-btn" disabled>' +
+          '<i class="bi bi-box-arrow-in-right me-1"></i>Connect Target Tenant</button>'
+        );
+      }
+      $('#wf-target-form').addClass('d-none');
+      $step5.find('button').prop('disabled', true);
+    } else if (!serverTargetConnected) {
+      $step5.removeClass('opacity-50').css('border-color', '');
+      $step5.find('button').prop('disabled', false);
+    }
+
+    // Reset Step 9 badge
+    $('#wf-close-badge').removeClass('bg-success').addClass('bg-secondary').text('Pending');
+
+    // Reset restore button text
+    $('#wf-restore-btn')
+      .html('<i class="bi bi-play-fill me-1"></i>Run Restoration')
+      .removeClass('btn-outline-success').addClass('btn-warning');
+    // Reset validation button
+    $('#wf-validation-btn')
+      .html('<i class="bi bi-play-fill me-1"></i>Run Validation Scan')
+      .removeClass('btn-outline-success').addClass('btn-success');
+  }
+  $subSelect.on('change', updateSubSelection);
+  updateSubSelection();
+
+  // Reset workflow on page load (fresh start) and when switching tabs
+  resetWorkflow();
+  $('button[data-bs-toggle="pill"]').on('shown.bs.tab', function (e) {
+    // Reset when leaving OR entering the workflow tab
+    if (e.target.id === 'workflow-tab' || e.relatedTarget && e.relatedTarget.id === 'workflow-tab') {
+      resetWorkflow();
+    }
   });
+
+  // ── Helpers ─────────────────────────────────────────────────────
+  function apiPost(url, data) {
+    return $.ajax({
+      url: url,
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(data),
+      headers: { 'X-CSRFToken': wfState.csrfToken }
+    });
+  }
+
+  /**
+   * Update a progress bar, step text, and percentage from API data.
+   * @param {string} prefix - element ID prefix (e.g. 'wf-scan', 'cs-progress')
+   * @param {object} d      - API response with progress_pct, current_step, etc.
+   */
+  function updateProgress(prefix, d) {
+    var pct = d.progress_pct || 0;
+    var step = d.current_step || 'Working…';
+    var stepsInfo = '';
+    if (d.total_steps > 0) {
+      stepsInfo = ' (' + (d.steps_completed || 0) + '/' + d.total_steps + ')';
+    }
+    $('#' + prefix + '-bar').css('width', pct + '%');
+    $('#' + prefix + '-pct').text(pct + '%');
+    $('#' + prefix + '-step').text(step + stepsInfo);
+  }
+
+  function pollTask(taskId, apiUrl, onComplete, onProgress) {
+    var interval = setInterval(function () {
+      $.getJSON(apiUrl.replace('TASK_ID', taskId), function (d) {
+        if (onProgress) onProgress(d);
+        if (d.status === 'completed' || d.status === 'failed') {
+          clearInterval(interval);
+          onComplete(d);
+        }
+      }).fail(function () {
+        clearInterval(interval);
+        onComplete({ status: 'failed', error: 'Lost connection to server' });
+      });
+    }, 2000);
+  }
+
+  function unlockStep($step) {
+    $step.removeClass('opacity-50');
+    $step.find('button').prop('disabled', false);
+  }
+
+  function markDone($step) {
+    $step.css('border-color', 'var(--bs-success)');
+    $step.find('button').prop('disabled', true).removeClass('btn-primary btn-warning btn-info')
+      .addClass('btn-outline-success').html('<i class="bi bi-check-circle me-1"></i>Done');
+  }
+
+  function lockStep($step) {
+    // Gray out a completed step so it's visually "past"
+    $step.addClass('opacity-50');
+    $step.find('button, a.btn, select, input').prop('disabled', true);
+    $step.find('a.btn').addClass('disabled');
+  }
+
+  // ── Step 1: ANALYZE SUBSCRIPTION (scan + readiness) ─────────────
+  $scanBtn.on('click', function () {
+    if (!wfState.subId) return;
+    var $btn = $(this);
+    $btn.prop('disabled', true);
+    $subSelect.prop('disabled', true);
+    $('#wf-scan-progress').removeClass('d-none');
+    $('#wf-scan-result').addClass('d-none').empty();
+
+    apiPost('{{ url_for("main.api_start_scan") }}', { subscription_id: wfState.subId })
+      .done(function (resp) {
+        wfState.scanTaskId = resp.task_id;
+        pollTask(resp.task_id, '{{ url_for("main.api_task_status", task_id="TASK_ID") }}',
+          function onComplete(d) {
+            $('#wf-scan-progress').addClass('d-none');
+            var $r = $('#wf-scan-result').removeClass('d-none');
+            if (d.status === 'failed') {
+              $r.html('<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>' +
+                (d.error || 'Analysis failed') + '</div>');
+              $btn.prop('disabled', false);
+              $subSelect.prop('disabled', false);
+              return;
+            }
+
+            // ── Readiness verdict ──
+            var rd = d.readiness || {};
+            var blockers = rd.blockers || [];
+            var warnings = rd.warnings || [];
+            var info = rd.info || [];
+            var ready = rd.ready;
+            var verdictType = blockers.length > 0 ? 'danger' : (warnings.length > 0 ? 'warning' : 'success');
+            var verdictText = ready ? '✅ Ready to transfer' : '⛔ Not ready — fix blockers first';
+
+            var safe = d.transfer_safe_count || 0;
+            var actionList = d.requires_action || [];
+            var childCount = 0;
+            actionList.forEach(function (r) { childCount += (r.children || []).length; });
+            var action = actionList.length + childCount;
+
+            var html = '';
+
+            // Readiness banner
+            html += '<div class="alert alert-' + verdictType + ' mb-2">' +
+              '<i class="bi bi-shield-check me-2"></i><strong>' + verdictText + '</strong> — ' +
+              safe + ' transfer-safe, ' + action + ' require action. ' +
+              blockers.length + ' blocker(s), ' + warnings.length + ' warning(s).</div>';
+
+            // Blockers table
+            if (blockers.length > 0) {
+              html += '<div class="mb-3"><strong class="text-danger">' +
+                '<i class="bi bi-x-octagon me-1"></i>Blockers — must fix before transfer:</strong>' +
+                '<table class="table table-sm table-bordered mt-1 mb-0">' +
+                '<thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action Required</th></tr></thead><tbody>';
+              blockers.forEach(function (b) {
+                html += '<tr class="table-danger"><td>' + (b.name || '') + '</td>' +
+                  '<td><code>' + (b.type || '') + '</code></td>' +
+                  '<td>' + (b.issue || '') + '</td>' +
+                  '<td class="small">' + (b.action || '') + '</td></tr>';
+              });
+              html += '</tbody></table></div>';
+            }
+
+            // Warnings table
+            if (warnings.length > 0) {
+              html += '<div class="mb-3"><strong class="text-warning">' +
+                '<i class="bi bi-exclamation-triangle me-1"></i>Warnings — should fix before transfer:</strong>' +
+                '<table class="table table-sm table-bordered mt-1 mb-0">' +
+                '<thead><tr><th>Resource</th><th>Type</th><th>Issue</th><th>Action Required</th></tr></thead><tbody>';
+              warnings.forEach(function (w) {
+                html += '<tr class="table-warning"><td>' + (w.name || '') + '</td>' +
+                  '<td><code>' + (w.type || '') + '</code></td>' +
+                  '<td>' + (w.issue || '') + '</td>' +
+                  '<td class="small">' + (w.action || '') + '</td></tr>';
+              });
+              html += '</tbody></table></div>';
+            }
+
+            // Full resource table with Pre-Transfer / Post-Transfer columns
+            if (actionList.length > 0) {
+              html += '<div class="mb-2"><strong><i class="bi bi-list-ul me-1"></i>Resources requiring action:</strong></div>';
+              html += '<div class="table-responsive" style="max-height:400px;overflow-y:auto;">' +
+                '<table class="table table-sm table-bordered mb-0">' +
+                '<thead class="sticky-top"><tr><th>Resource</th><th>Type</th><th>Timing</th>' +
+                '<th>Pre-Transfer Action</th><th>Post-Transfer Action</th></tr></thead><tbody>';
+              actionList.forEach(function (r) {
+                html += renderActionRow(r, false);
+                (r.children || []).forEach(function (c) {
+                  html += renderActionRow(c, true);
+                });
+              });
+              html += '</tbody></table></div>';
+            }
+
+            // Info
+            if (info.length > 0) {
+              html += '<div class="mt-2"><strong class="text-info">' +
+                '<i class="bi bi-info-circle me-1"></i>Info:</strong><ul class="mb-0 mt-1">';
+              info.forEach(function (i) {
+                html += '<li class="small">' +
+                  (i.category ? '<strong>' + i.category + ':</strong> ' : '') +
+                  (i.detail || '') + '</li>';
+              });
+              html += '</ul></div>';
+            }
+
+            $r.html(html);
+            markDone($('#wf-step-scan'));
+            lockStep($('#wf-step-scan'));
+            unlockStep($('#wf-step-export'));
+          },
+          function onProgress(d) { updateProgress('wf-scan', d); }
+        );
+      })
+      .fail(function (xhr) {
+        $('#wf-scan-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#wf-scan-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+        $subSelect.prop('disabled', false);
+      });
+  });
+
+  function renderActionRow(r, isChild) {
+    var timing = (r.timing || 'post').toUpperCase();
+    var timingBadge = timing === 'PRE' ? '<span class="badge bg-danger">PRE</span>'
+      : timing === 'BOTH' ? '<span class="badge bg-warning text-dark">PRE+POST</span>'
+      : '<span class="badge bg-info">POST</span>';
+    var pre = r.pre_action || r.pre || '';
+    var post = r.post_action || r.post || '';
+    var docUrl = r.doc_url || '';
+    var docLink = docUrl ? ' <a href="' + docUrl + '" target="_blank" rel="noopener" class="text-info">' +
+      '<i class="bi bi-box-arrow-up-right"></i></a>' : '';
+    var namePrefix = isChild
+      ? '<td class="ps-4"><i class="bi bi-arrow-return-right text-secondary me-1"></i>'
+      : '<td>';
+    var rowClass = isChild ? ' class="table-light"' : '';
+    return '<tr' + rowClass + '>' + namePrefix + (r.name || '') + '</td>' +
+      '<td><code>' + (r.type || '') + '</code></td>' +
+      '<td>' + timingBadge + '</td>' +
+      '<td class="small">' + (pre || '—') + docLink + '</td>' +
+      '<td class="small">' + (post || '—') + '</td></tr>';
+  }
+
+  // ── Step 2: PRE-TRANSFER EXPORT ────────────────────────────────
+  $('#wf-export-btn').on('click', function () {
+    if (!wfState.scanTaskId) {
+      alert('Please run a scan first.');
+      return;
+    }
+    var $btn = $(this).prop('disabled', true);
+    $('#wf-export-progress').removeClass('d-none');
+    $('#wf-export-result').addClass('d-none').empty();
+
+    apiPost('{{ url_for("main.api_start_pre_transfer") }}', { scan_task_id: wfState.scanTaskId })
+      .done(function (resp) {
+        wfState.exportTaskId = resp.task_id;
+        pollTask(resp.task_id, '{{ url_for("main.api_pre_transfer_status", task_id="TASK_ID") }}',
+          function onComplete(d) {
+            $('#wf-export-progress').addClass('d-none');
+            var $r = $('#wf-export-result').removeClass('d-none');
+            if (d.status === 'failed') {
+              $r.html('<div class="alert alert-danger mb-0">' + (d.error || 'Export failed') + '</div>');
+              $btn.prop('disabled', false);
+              return;
+            }
+            var steps = d.steps || [];
+            var summary = d.summary || {};
+            var html = '<div class="alert alert-' +
+              (d.overall_status === 'succeeded' ? 'success' : 'warning') +
+              ' mb-2"><i class="bi bi-box-seam me-2"></i><strong>Export complete:</strong> ' +
+              (summary.succeeded || 0) + '/' + (summary.total || 0) + ' steps succeeded.</div>';
+
+            html += '<table class="table table-sm table-bordered mb-0">' +
+              '<thead><tr><th>Step</th><th>Status</th><th>Items</th></tr></thead><tbody>';
+            steps.forEach(function (s) {
+              var badge = s.status === 'succeeded' ? 'success' : 'danger';
+              html += '<tr><td>' + s.name + '</td><td><span class="badge bg-' + badge + '">' +
+                s.status + '</span></td><td>' + (s.count != null ? s.count : '—') + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            $r.html(html);
+            markDone($('#wf-step-export'));
+            lockStep($('#wf-step-export'));
+
+            // Unlock download
+            var $dl = $('#wf-step-bundle').removeClass('opacity-50');
+            var downloadUrl = '{{ url_for("main.download_bundle", task_id="TASK_ID") }}'
+              .replace('TASK_ID', wfState.exportTaskId);
+            $('#wf-download-btn').attr('href', downloadUrl).removeClass('disabled');
+          },
+          function onProgress(d) { updateProgress('wf-export', d); }
+        );
+      })
+      .fail(function (xhr) {
+        $('#wf-export-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#wf-export-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+      });
+  });
+
+  // ── Step 5: CONNECT TO TARGET TENANT ─────────────────────────────
+  {% if target_tenant_connected %}
+    // Already connected — mark step as done and lock it
+    markDone($('#wf-step-target'));
+    lockStep($('#wf-step-target'));
+    $('#wf-step-mapping').removeClass('opacity-50');
+    $('#wf-mapping-btn').prop('disabled', false);
+  {% endif %}
+
+  $('#wf-target-btn').on('click', function () {
+    $('#wf-target-form').removeClass('d-none');
+    $(this).addClass('d-none');
+  });
+
+  $('#wf-target-connect-btn').on('click', function () {
+    var tenantId = $('#wf-target-tenant-id').val().trim();
+    var uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(tenantId)) {
+      alert('Please enter a valid UUID for the target tenant ID.');
+      return;
+    }
+    // Submit a form POST to /auth/target-tenant (standard OAuth redirect)
+    var $form = $('<form method="POST" action="{{ url_for("auth.target_tenant_login") }}">' +
+      '<input type="hidden" name="target_tenant_id" value="' + tenantId + '">' +
+      '<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">' +
+      '</form>');
+    $('body').append($form);
+    $form.submit();
+  });
+
+  // ── Step 6: PRINCIPAL MAPPING (Sharegate-style auto-mapping) ────
+  var wfPrincipals = [];
+
+  $('#wf-mapping-btn').on('click', function () {
+    var $btn = $(this).prop('disabled', true);
+    $('#wf-mapping-progress').removeClass('d-none');
+    $('#wf-mapping-result').addClass('d-none').empty();
+
+    apiPost('{{ url_for("main.api_get_principal_mapping") }}', {})
+      .done(function (resp) {
+        $('#wf-mapping-progress').addClass('d-none');
+        var $r = $('#wf-mapping-result').removeClass('d-none');
+
+        // Target tenant not connected?
+        if (resp.needs_target_tenant) {
+          $r.html(
+            '<div class="alert alert-warning mb-0">' +
+            '<i class="bi bi-building-add me-2"></i>' +
+            '<strong>Target tenant not connected.</strong> ' +
+            'Please complete Step 6 first to authenticate in the destination tenant.' +
+            '</div>'
+          );
+          $btn.prop('disabled', false);
+          return;
+        }
+
+        if (!resp.has_rbac) {
+          $r.html('<div class="alert alert-info mb-0">' +
+            '<i class="bi bi-info-circle me-1"></i>No RBAC assignments found in bundle. ' +
+            'You can skip mapping and proceed to restoration.</div>');
+          markDone($('#wf-step-mapping'));
+          unlockStep($('#wf-step-restore'));
+          return;
+        }
+
+        wfPrincipals = resp.principals || [];
+        if (wfPrincipals.length === 0) {
+          $r.html('<div class="alert alert-info mb-0">' +
+            '<i class="bi bi-info-circle me-1"></i>No principals found in RBAC data. Proceeding without mapping.</div>');
+          markDone($('#wf-step-mapping'));
+          unlockStep($('#wf-step-restore'));
+          return;
+        }
+
+        // Auto-mapping stats
+        var autoMapped = resp.auto_mapped || 0;
+        var total = resp.total || wfPrincipals.length;
+        var systemCount = resp.system_count || 0;
+        var miCount = resp.managed_identity_count || 0;
+        var unknownCount = resp.unknown_count || 0;
+        var mappableCount = resp.mappable_count || 0;
+        var highCount = 0, medCount = 0, unmatchedCount = 0;
+        // Only count mappable principals for auto-match stats
+        wfPrincipals.forEach(function (p) {
+          if (p.category !== 'mappable') return;
+          var c = p.suggested_confidence || '';
+          if (c === 'high') highCount++;
+          else if (c === 'medium' || c === 'low') medCount++;
+          else unmatchedCount++;
+        });
+
+        var skippedTotal = systemCount + miCount + unknownCount;
+        var html = '<div class="alert alert-info mb-2">' +
+          '<i class="bi bi-people me-1"></i><strong>' + total +
+          ' principal(s)</strong> found — ' + skippedTotal + ' auto-skipped, ' +
+          mappableCount + ' need review.</div>';
+
+        // Category breakdown cards
+        html += '<div class="row text-center mb-3 g-2">' +
+          '<div class="col"><div class="border rounded p-2 border-secondary">' +
+            '<div class="fs-4 text-body-secondary fw-bold">' + systemCount + '</div>' +
+            '<small>System</small></div></div>' +
+          '<div class="col"><div class="border rounded p-2 border-secondary">' +
+            '<div class="fs-4 text-body-secondary fw-bold">' + miCount + '</div>' +
+            '<small>Managed ID</small></div></div>' +
+          '<div class="col"><div class="border rounded p-2 border-secondary">' +
+            '<div class="fs-4 text-body-secondary fw-bold">' + unknownCount + '</div>' +
+            '<small>Unknown / Deleted</small></div></div>' +
+          '<div class="col"><div class="border rounded p-2 border-success">' +
+            '<div class="fs-4 text-success fw-bold">' + highCount + '</div>' +
+            '<small>Auto-matched</small></div></div>' +
+          '<div class="col"><div class="border rounded p-2 border-warning">' +
+            '<div class="fs-4 text-warning fw-bold">' + (medCount + unmatchedCount) + '</div>' +
+            '<small>Needs Review</small></div></div>' +
+          '</div>';
+
+        if (highCount > 0) {
+          html += '<button class="btn btn-success btn-sm mb-2 me-2" id="wf-accept-all-high">' +
+            '<i class="bi bi-check2-all me-1"></i>Accept All High-Confidence (' + highCount + ')</button>';
+        }
+
+        // Filter toggle
+        html += '<div class="form-check form-switch mb-2">' +
+          '<input class="form-check-input" type="checkbox" id="wf-show-all-principals" checked>' +
+          '<label class="form-check-label small" for="wf-show-all-principals">' +
+          'Show auto-skipped principals (system, managed identity, unknown/deleted)</label></div>';
+
+        html += '<div class="table-responsive" style="max-height:400px;overflow-y:auto;">' +
+          '<table class="table table-sm table-bordered mb-2">' +
+          '<thead class="sticky-top"><tr><th>Source ID</th><th>Type</th><th>Category</th><th>Display Name</th>' +
+          '<th>Target ID (new tenant)</th><th>Match</th></tr></thead><tbody>';
+
+        wfPrincipals.forEach(function (p, i) {
+          var category = p.category || 'mappable';
+          var isSkippable = (category === 'system' || category === 'managed_identity' || category === 'unknown');
+          var suggested = p.suggested_id || '';
+          var suggestedLabel = p.suggested_name || '';
+          var confidence = p.suggested_confidence || '';
+          var matchReason = p.match_reason || '';
+          var confBadge = '';
+          var rowClass = '';
+          var catBadge = '';
+
+          if (isSkippable) {
+            rowClass = ' class="wf-skippable-row table-secondary text-body-secondary"';
+            if (category === 'system') {
+              catBadge = '<span class="badge bg-dark">System</span>';
+            } else if (category === 'managed_identity') {
+              catBadge = '<span class="badge bg-info text-dark">Managed ID</span>';
+            } else {
+              catBadge = '<span class="badge bg-secondary">Unknown</span>';
+            }
+          } else {
+            catBadge = '<span class="badge bg-primary">Mappable</span>';
+            if (confidence === 'high') {
+              confBadge = '<span class="badge bg-success">high</span>';
+              rowClass = ' class="table-success"';
+            } else if (confidence === 'medium') {
+              confBadge = '<span class="badge bg-warning text-dark">med</span>';
+              rowClass = ' class="table-warning"';
+            } else if (confidence === 'low') {
+              confBadge = '<span class="badge bg-secondary">low</span>';
+            } else {
+              rowClass = '';
+            }
+          }
+
+          // Display name with UPN/mail underneath
+          var nameHtml = (p.display_name && p.display_name !== '(unknown)')
+            ? p.display_name : '<span class="text-body-secondary">(unknown)</span>';
+          if (p.upn) nameHtml += '<br><small class="text-body-secondary">' + p.upn + '</small>';
+          else if (p.mail) nameHtml += '<br><small class="text-body-secondary">' + p.mail + '</small>';
+
+          // Skippable principals get a read-only "Auto-skip" label instead of input
+          var targetCell = '';
+          if (isSkippable) {
+            targetCell = '<span class="text-body-secondary small fst-italic">Auto-skipped</span>';
+          } else {
+            targetCell = '<input type="text" class="form-control form-control-sm wf-mapping-input" ' +
+              'data-old-id="' + (p.principal_id || '') + '" ' +
+              'data-confidence="' + confidence + '" ' +
+              'value="' + suggested + '" ' +
+              'placeholder="' + (suggestedLabel ? suggestedLabel : 'Enter target principal ID') + '">';
+          }
+
+          html += '<tr' + rowClass + '>' +
+            '<td><code class="small" style="word-break:break-all">' + (p.principal_id || '') + '</code></td>' +
+            '<td><span class="badge bg-secondary">' + (p.object_type || p.principal_type || 'Unknown') + '</span></td>' +
+            '<td>' + catBadge + '</td>' +
+            '<td>' + nameHtml + '</td>' +
+            '<td>' + targetCell + '</td>' +
+            '<td class="small">' + confBadge +
+              (matchReason ? '<br><small class="text-body-secondary">' + matchReason + '</small>' : '') +
+            '</td></tr>';
+        });
+
+        html += '</tbody></table></div>' +
+          '<button class="btn btn-warning btn-sm" id="wf-confirm-mapping-btn">' +
+          '<i class="bi bi-check-lg me-1"></i>Confirm Mapping</button>';
+
+        $r.html(html);
+
+        // Toggle visibility of system/MI rows
+        $('#wf-show-all-principals').on('change', function () {
+          if ($(this).is(':checked')) {
+            $('.wf-skippable-row').show();
+          } else {
+            $('.wf-skippable-row').hide();
+          }
+        });
+
+        // Accept All High handler
+        $('#wf-accept-all-high').on('click', function () {
+          // High-confidence inputs already have values filled in.
+          // Just visually confirm by highlighting them.
+          $('.wf-mapping-input').each(function () {
+            if ($(this).data('confidence') === 'high' && $(this).val()) {
+              $(this).addClass('border-success');
+            }
+          });
+          $(this).replaceWith(
+            '<span class="badge bg-success"><i class="bi bi-check me-1"></i>' +
+            highCount + ' accepted</span>'
+          );
+        });
+
+        // Confirm button handler
+        $('#wf-confirm-mapping-btn').on('click', function () {
+          wfState.principalMapping = {};
+          $('.wf-mapping-input').each(function () {
+            var oldId = $(this).data('old-id');
+            var newId = $(this).val().trim();
+            if (oldId && newId) {
+              wfState.principalMapping[oldId] = newId;
+            }
+          });
+          var mapCount = Object.keys(wfState.principalMapping).length;
+          markDone($('#wf-step-mapping'));
+          lockStep($('#wf-step-mapping'));
+          unlockStep($('#wf-step-restore'));
+          $(this).replaceWith(
+            '<div class="alert alert-success py-1 px-2 mb-0 d-inline-block">' +
+            '<i class="bi bi-check-circle me-1"></i>' + mapCount + ' / ' + mappableCount +
+            ' mappable principals mapped (' + skippedTotal + ' auto-skipped)</div>'
+          );
+        });
+      })
+      .fail(function (xhr) {
+        $('#wf-mapping-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Failed to load mapping';
+        $('#wf-mapping-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+      });
+  });
+
+  // ── Step 7: RUN RESTORATION ────────────────────────────────────
+  $('#wf-restore-btn').on('click', function () {
+    var $btn = $(this).prop('disabled', true);
+    $('#wf-restore-progress').removeClass('d-none');
+    $('#wf-restore-step').text(
+      $('#wf-dry-run-toggle').is(':checked')
+        ? 'Starting dry-run simulation…'
+        : 'Starting post-transfer restoration…'
+    );
+    $('#wf-restore-result').addClass('d-none').empty();
+
+    var mapping = wfState.principalMapping || {};
+    var dryRun = $('#wf-dry-run-toggle').is(':checked');
+
+    apiPost('{{ url_for("main.api_start_post_transfer") }}', { mapping: mapping, dry_run: dryRun })
+      .done(function (resp) {
+        wfState.restoreTaskId = resp.task_id;
+        pollTask(resp.task_id, '{{ url_for("main.api_post_transfer_status", task_id="TASK_ID") }}',
+          function onComplete(d) {
+            $('#wf-restore-progress').addClass('d-none');
+            var $r = $('#wf-restore-result').removeClass('d-none');
+            if (d.status === 'failed') {
+              $r.html('<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>' +
+                (d.error || 'Restoration failed') + '</div>');
+              $btn.prop('disabled', false);
+              return;
+            }
+            var result = d.result || {};
+            var ops = result.operations || [];
+            var summary = result.summary || {};
+            var isDryRun = result.dry_run === true;
+            var alertType = isDryRun ? 'info' : ((summary.failed || 0) > 0 ? 'warning' : 'success');
+            var html = '';
+            if (isDryRun) {
+              html += '<div class="alert alert-info border-info mb-2">' +
+                '<i class="bi bi-flask me-2"></i><strong>DRY RUN</strong> — No changes were made to Azure. ' +
+                'Results below show what <em>would</em> happen during a real restoration.</div>';
+            }
+            html += '<div class="alert alert-' + alertType + ' mb-2">' +
+              '<i class="bi bi-gear me-2"></i><strong>Restoration ' + (isDryRun ? 'simulation' : '') + ' complete:</strong> ' +
+              (summary.succeeded || 0) + '/' + (summary.total || 0) + ' operations succeeded';
+            if (summary.skipped) html += ', ' + summary.skipped + ' skipped';
+            if (summary.failed) html += ', ' + summary.failed + ' failed';
+            html += '.</div>';
+
+            if (ops.length > 0) {
+              html += '<table class="table table-sm table-bordered mb-0">' +
+                '<thead><tr><th>Operation</th><th>Status</th><th>Details</th></tr></thead><tbody>';
+              ops.forEach(function (op) {
+                var st = op.status || '';
+                var badge = st === 'succeeded' ? 'success'
+                  : st === 'dry_run' ? 'info'
+                  : st === 'skipped' ? 'secondary'
+                  : st === 'manual' ? 'info'
+                  : st === 'partial' ? 'warning' : 'danger';
+                // Build details: show error message for failures, or summary from details array
+                var detail = '';
+                if (op.error) {
+                  detail = '<span class="text-danger">' + op.error + '</span>';
+                } else if (op.details && op.details.length > 0) {
+                  var first = op.details[0];
+                  if (first && first.action === 'Summary') {
+                    var parts = [];
+                    Object.keys(first).forEach(function (k) {
+                      if (k !== 'action' && k !== 'status' && first[k] != null) {
+                        parts.push(k.replace(/_/g, ' ') + ': ' + first[k]);
+                      }
+                    });
+                    detail = parts.join(', ');
+                  } else if (first.note) {
+                    detail = first.note;
+                  } else if (first.action) {
+                    detail = first.action;
+                  }
+                }
+                if (!detail) detail = '—';
+                html += '<tr><td>' + (op.name || op.operation || '') + '</td>' +
+                  '<td><span class="badge bg-' + badge + '">' + st + '</span></td>' +
+                  '<td class="small">' + detail + '</td></tr>';
+              });
+              html += '</tbody></table>';
+            }
+            $r.html(html);
+            if (!isDryRun) {
+              markDone($('#wf-step-restore'));
+              lockStep($('#wf-step-restore'));
+            } else {
+              $btn.prop('disabled', false);  // Allow re-run in real mode
+            }
+            // Unlock Phase 4
+            unlockStep($('#wf-step-validation'));
+          },
+          function onProgress(d) { updateProgress('wf-restore', d); }
+        );
+      })
+      .fail(function (xhr) {
+        $('#wf-restore-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#wf-restore-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+      });
+  });
+
+  // ── Step 8: VALIDATION SCAN (with pre/post diff) ────────────────
+  $('#wf-validation-btn').on('click', function () {
+    if (!wfState.subId) {
+      alert('No subscription selected.');
+      return;
+    }
+    var $btn = $(this).prop('disabled', true);
+    $('#wf-validation-progress').removeClass('d-none');
+    $('#wf-validation-result').addClass('d-none').empty();
+
+    apiPost('{{ url_for("main.api_start_scan") }}', { subscription_id: wfState.subId })
+      .done(function (resp) {
+        wfState.validationTaskId = resp.task_id;
+        pollTask(resp.task_id, '{{ url_for("main.api_task_status", task_id="TASK_ID") }}',
+          function onComplete(d) {
+            $('#wf-validation-progress').addClass('d-none');
+            var $r = $('#wf-validation-result').removeClass('d-none');
+            if (d.status === 'failed') {
+              $r.html('<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>' +
+                (d.error || 'Validation scan failed') + '</div>');
+              $btn.prop('disabled', false);
+              return;
+            }
+
+            var newActionList = d.requires_action || [];
+            var newChildCount = 0;
+            newActionList.forEach(function (r) { newChildCount += (r.children || []).length; });
+            var newActionCount = newActionList.length + newChildCount;
+            var newSafe = d.transfer_safe_count || 0;
+
+            // Build a set of resource IDs that still require action
+            var newActionIds = {};
+            newActionList.forEach(function (r) {
+              if (r.id) newActionIds[r.id.toLowerCase()] = r;
+              (r.children || []).forEach(function (c) {
+                if (c.id) newActionIds[c.id.toLowerCase()] = c;
+              });
+            });
+
+            var alertType = newActionCount > 0 ? 'warning' : 'success';
+            var icon = newActionCount === 0 ? 'bi-check-circle' : 'bi-exclamation-triangle';
+            var html = '<div class="alert alert-' + alertType + ' mb-2">' +
+              '<i class="bi ' + icon + ' me-2"></i><strong>Validation scan:</strong> ' +
+              newSafe + ' healthy, ' + newActionCount + ' still require attention.</div>';
+
+            if (newActionCount === 0) {
+              html += '<div class="alert alert-success mb-2">' +
+                '<i class="bi bi-trophy me-2"></i><strong>All clear!</strong> ' +
+                'All resources are operational in the target tenant. Migration is complete.</div>';
+            }
+
+            // Try to load original scan for diff comparison
+            $.getJSON('{{ url_for("main.api_bundle_scan_data") }}')
+              .done(function (orig) {
+                var origActionList = orig.requires_action || [];
+                var origActionIds = {};
+                origActionList.forEach(function (r) {
+                  if (r.id) origActionIds[r.id.toLowerCase()] = r;
+                  (r.children || []).forEach(function (c) {
+                    if (c.id) origActionIds[c.id.toLowerCase()] = c;
+                  });
+                });
+
+                // Compute diff
+                var fixed = [];   // was in original requires_action, no longer
+                var stillBroken = [];  // in both
+                var newIssues = [];  // in new but not original
+
+                Object.keys(origActionIds).forEach(function (id) {
+                  if (newActionIds[id]) {
+                    stillBroken.push(origActionIds[id]);
+                  } else {
+                    fixed.push(origActionIds[id]);
+                  }
+                });
+                Object.keys(newActionIds).forEach(function (id) {
+                  if (!origActionIds[id]) {
+                    newIssues.push(newActionIds[id]);
+                  }
+                });
+
+                var origTotal = Object.keys(origActionIds).length;
+                html += '<div class="card border-info mt-3"><div class="card-header bg-info bg-opacity-10 fw-semibold">' +
+                  '<i class="bi bi-arrow-left-right me-2"></i>Pre/Post Migration Diff' +
+                  '</div><div class="card-body">';
+
+                html += '<div class="row text-center mb-3">' +
+                  '<div class="col-4"><div class="border rounded p-2"><div class="fs-4 text-success fw-bold">' + fixed.length + '</div>' +
+                  '<small class="text-body-secondary">Fixed</small></div></div>' +
+                  '<div class="col-4"><div class="border rounded p-2"><div class="fs-4 text-warning fw-bold">' + stillBroken.length + '</div>' +
+                  '<small class="text-body-secondary">Still Need Attention</small></div></div>' +
+                  '<div class="col-4"><div class="border rounded p-2"><div class="fs-4 text-danger fw-bold">' + newIssues.length + '</div>' +
+                  '<small class="text-body-secondary">New Issues</small></div></div>' +
+                  '</div>';
+
+                if (fixed.length > 0) {
+                  html += '<details class="mb-2"><summary class="text-success fw-semibold"><i class="bi bi-check-circle me-1"></i>' +
+                    fixed.length + ' issue(s) resolved</summary>' +
+                    '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th></tr></thead><tbody>';
+                  fixed.forEach(function (r) {
+                    html += '<tr class="table-success"><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') + '</code></td></tr>';
+                  });
+                  html += '</tbody></table></details>';
+                }
+                if (stillBroken.length > 0) {
+                  html += '<details class="mb-2"><summary class="text-warning fw-semibold"><i class="bi bi-exclamation-triangle me-1"></i>' +
+                    stillBroken.length + ' issue(s) remaining</summary>' +
+                    '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Action</th></tr></thead><tbody>';
+                  stillBroken.forEach(function (r) {
+                    html += '<tr class="table-warning"><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
+                      '</code></td><td class="small">' + (r.pre_action || r.post_action || '—') + '</td></tr>';
+                  });
+                  html += '</tbody></table></details>';
+                }
+                if (newIssues.length > 0) {
+                  html += '<details class="mb-2"><summary class="text-danger fw-semibold"><i class="bi bi-plus-circle me-1"></i>' +
+                    newIssues.length + ' new issue(s)</summary>' +
+                    '<table class="table table-sm table-bordered mt-1 mb-0"><thead><tr><th>Resource</th><th>Type</th><th>Action</th></tr></thead><tbody>';
+                  newIssues.forEach(function (r) {
+                    html += '<tr class="table-danger"><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
+                      '</code></td><td class="small">' + (r.pre_action || r.post_action || '—') + '</td></tr>';
+                  });
+                  html += '</tbody></table></details>';
+                }
+
+                html += '</div></div>';
+                $r.html(html);
+              })
+              .fail(function () {
+                // No bundle data — show results without diff
+                if (newActionCount > 0) {
+                  html += '<div class="table-responsive" style="max-height:300px;overflow-y:auto;"><table class="table table-sm table-bordered mb-0">' +
+                    '<thead class="sticky-top"><tr><th>Resource</th><th>Type</th><th>Action</th></tr></thead><tbody>';
+                  newActionList.forEach(function (r) {
+                    html += '<tr><td>' + (r.name || '') + '</td><td><code>' + (r.type || '') +
+                      '</code></td><td class="small">' + (r.pre_action || r.post_action || '—') + '</td></tr>';
+                  });
+                  html += '</tbody></table></div>';
+                }
+                $r.html(html);
+              });
+
+            markDone($('#wf-step-validation'));
+            lockStep($('#wf-step-validation'));
+            // Mark completion
+            $('#wf-step-close').removeClass('opacity-50');
+            $('#wf-close-badge').removeClass('bg-secondary').addClass('bg-success')
+              .html('<i class="bi bi-check-circle me-1"></i>Complete');
+          },
+          function onProgress(d) { updateProgress('wf-validation', d); }
+        );
+      })
+      .fail(function (xhr) {
+        $('#wf-validation-progress').addClass('d-none');
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#wf-validation-result').removeClass('d-none')
+          .html('<div class="alert alert-danger mb-0">' + msg + '</div>');
+        $btn.prop('disabled', false);
+      });
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // Cross-Subscription Dependency Analysis
+  // ══════════════════════════════════════════════════════════════════
+
+  // Enable/disable the analyze button based on selection count
+  $('#cs-sub-select').on('change', function () {
+    var count = $(this).val() ? $(this).val().length : 0;
+    $('#cs-start-btn').prop('disabled', count < 2)
+      .html('<i class="bi bi-diagram-3 me-1"></i>Analyze ' + count + ' Subscription' + (count !== 1 ? 's' : ''));
+  });
+
+  // Also support ?tab=crosssub in URL
+  if (urlParams.get('tab') === 'crosssub') {
+    $('#crosssub-tab').tab('show');
+  }
+
+  // Short subscription ID helper
+  function shortSub(sid) {
+    return sid ? sid.substring(0, 8) + '…' : '?';
+  }
+
+  // Find display name for a subscription ID
+  function subDisplayName(sid) {
+    var $opt = $('#cs-sub-select option[value="' + sid + '"]');
+    return $opt.length ? $opt.text().trim() : shortSub(sid);
+  }
+
+  // Extract just the subscription name (no ID suffix)
+  function subNameOnly(sid) {
+    var full = subDisplayName(sid);
+    // Strip trailing " (xxxxxxxx...)" or " (uuid)" suffix
+    var m = full.match(/^(.+?)\s*\([0-9a-f]{4,}/i);
+    return m ? m[1].trim() : full;
+  }
+
+  // Start analysis
+  $('#cs-start-btn').on('click', function () {
+    var subIds = $('#cs-sub-select').val();
+    if (!subIds || subIds.length < 2) return;
+
+    var $btn = $(this);
+    $btn.prop('disabled', true);
+    $('#cs-progress').removeClass('d-none');
+    $('#cs-results').addClass('d-none');
+
+    apiPost('/api/start-cross-sub-analysis', { subscription_ids: subIds })
+      .done(function (resp) {
+        // Poll for completion
+        pollTask(resp.task_id, '/api/task/' + resp.task_id, function (data) {
+          // Task completed
+          $('#cs-progress').addClass('d-none');
+          $btn.prop('disabled', false);
+          renderCrossSubResults(data);
+        }, function onProgress(d) { updateProgress('cs-progress', d); });
+      })
+      .fail(function (xhr) {
+        $('#cs-progress').addClass('d-none');
+        $btn.prop('disabled', false);
+        var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Request failed';
+        $('#cs-results').removeClass('d-none')
+          .html('<div class="alert alert-danger">' + msg + '</div>');
+      });
+  });
+
+  function renderCrossSubResults(data) {
+    var subs = data.subscriptions || [];
+    var deps = data.dependencies || [];
+    var matrix = data.matrix || {};
+    var order = data.suggested_order || [];
+
+    $('#cs-results').removeClass('d-none');
+
+    // ── Summary cards ──
+    var cardsHtml = '';
+    subs.forEach(function (s) {
+      var depBadge = s.total_dependencies > 0
+        ? '<span class="badge bg-warning text-dark">' + s.total_dependencies + ' dependencies</span>'
+        : '<span class="badge bg-success">No dependencies</span>';
+      cardsHtml += '<div class="col-md-4"><div class="card h-100">' +
+        '<div class="card-body">' +
+        '<h6 class="card-title text-truncate" title="' + s.subscription_id + '">' +
+        subDisplayName(s.subscription_id) + '</h6>' +
+        '<div class="d-flex gap-2 flex-wrap">' +
+        '<span class="badge bg-success">' + s.transfer_safe_count + ' safe</span>' +
+        '<span class="badge bg-danger">' + s.requires_action_count + ' need action</span>' +
+        depBadge +
+        '</div>' +
+        '<div class="mt-2 small text-secondary">' +
+        '<i class="bi bi-arrow-up-right me-1"></i>' + s.outgoing_dependencies + ' outgoing · ' +
+        '<i class="bi bi-arrow-down-left me-1"></i>' + s.incoming_dependencies + ' incoming' +
+        '</div>' +
+        (s.error ? '<div class="text-danger small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>' + s.error + '</div>' : '') +
+        '</div></div></div>';
+    });
+    $('#cs-summary-cards').html(cardsHtml);
+
+    // ── Dependency matrix ──
+    var subIds = subs.map(function (s) { return s.subscription_id; });
+    var headHtml = '<tr><th class="table-dark" style="min-width:160px">From \ To</th>';
+    subIds.forEach(function (sid) {
+      headHtml += '<th class="text-center table-dark" style="min-width:140px" title="' + sid + '">' + subNameOnly(sid) + '</th>';
+    });
+    headHtml += '</tr>';
+    $('#cs-matrix-head').html(headHtml);
+
+    var bodyHtml = '';
+    subIds.forEach(function (srcSid) {
+      bodyHtml += '<tr><td class="fw-semibold table-dark" title="' + srcSid + '">' + subNameOnly(srcSid) + '</td>';
+      subIds.forEach(function (tgtSid) {
+        if (srcSid === tgtSid) {
+          bodyHtml += '<td class="text-center table-secondary">—</td>';
+        } else {
+          var count = (matrix[srcSid] && matrix[srcSid][tgtSid]) || 0;
+          var cls = count > 0 ? 'table-warning fw-bold' : '';
+          bodyHtml += '<td class="text-center ' + cls + '">' + count + '</td>';
+        }
+      });
+      bodyHtml += '</tr>';
+    });
+    $('#cs-matrix-body').html(bodyHtml);
+
+    // Hide matrix if only 2 subs (not very useful)
+    $('#cs-matrix-card').toggle(subIds.length > 2);
+
+    // ── Suggested order ──
+    var orderHtml = '';
+    order.forEach(function (sid, idx) {
+      var label = subDisplayName(sid);
+      var badge = idx === 0 ? ' <span class="badge bg-primary">Transfer first</span>' : '';
+      orderHtml += '<li class="mb-1">' + label + badge + '</li>';
+    });
+    $('#cs-order-list').html(orderHtml);
+    $('#cs-order-card').toggle(deps.length > 0);
+
+    // ── Dependency details ──
+    $('#cs-dep-count').text(deps.length + ' dependenc' + (deps.length !== 1 ? 'ies' : 'y'));
+    var depsHtml = '';
+    if (deps.length === 0) {
+      depsHtml = '<tr><td colspan="5" class="text-center text-success py-3">' +
+        '<i class="bi bi-check-circle me-1"></i>No cross-subscription dependencies detected' +
+        '</td></tr>';
+    } else {
+      deps.forEach(function (d) {
+        var typeBadge = '';
+        switch (d.type) {
+          case 'VNet Peering':     typeBadge = 'bg-primary'; break;
+          case 'Private Endpoint': typeBadge = 'bg-info text-dark'; break;
+          case 'Private DNS Link': typeBadge = 'bg-secondary'; break;
+          default:
+            typeBadge = d.type.indexOf('Diagnostic') >= 0 ? 'bg-warning text-dark' : 'bg-dark';
+        }
+        // Extract resource name from ID
+        var srcName = d.source_resource ? d.source_resource.split('/').pop() : '—';
+        depsHtml += '<tr>' +
+          '<td><span class="badge ' + typeBadge + '">' + d.type + '</span></td>' +
+          '<td title="' + d.source_sub + '">' + subNameOnly(d.source_sub) + '</td>' +
+          '<td title="' + d.target_sub + '">' + subNameOnly(d.target_sub) + '</td>' +
+          '<td class="text-truncate" style="max-width:250px" title="' + (d.source_resource || '') + '">' + srcName + '</td>' +
+          '<td class="small">' + (d.impact || '') + '</td>' +
+          '</tr>';
+      });
+    }
+    $('#cs-deps-body').html(depsHtml);
+    $('#cs-deps-card').toggle(true);
+  }
+
+});
 </script>
 {% endblock %}

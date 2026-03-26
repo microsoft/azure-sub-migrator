@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the authentication module."""
 
 from __future__ import annotations
@@ -6,14 +9,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tenova.auth import AuthMethod, get_credential
-from tenova.exceptions import AuthenticationError
+from azure_sub_migrator.auth import AuthMethod, get_credential
+from azure_sub_migrator.exceptions import AuthenticationError
 
 
 class TestGetCredential:
     """Tests for ``get_credential``."""
 
-    @patch("tenova.auth.AzureCliCredential")
+    @patch("azure_sub_migrator.auth.AzureCliCredential")
     def test_cli_credential_success(self, mock_cli_cls):
         """CLI credential should be returned when method is 'cli'."""
         mock_cred = MagicMock()
@@ -27,7 +30,7 @@ class TestGetCredential:
         mock_cli_cls.assert_called_once()
         assert result is mock_cred
 
-    @patch("tenova.auth.AzureCliCredential")
+    @patch("azure_sub_migrator.auth.AzureCliCredential")
     def test_cli_credential_with_tenant(self, mock_cli_cls):
         """tenant_id should be forwarded to AzureCliCredential."""
         mock_cred = MagicMock()
@@ -40,7 +43,7 @@ class TestGetCredential:
 
         mock_cli_cls.assert_called_once_with(tenant_id="my-tenant")
 
-    @patch("tenova.auth.ClientSecretCredential")
+    @patch("azure_sub_migrator.auth.ClientSecretCredential")
     def test_service_principal_credential(self, mock_sp_cls):
         mock_cred = MagicMock()
         mock_token = MagicMock()
@@ -63,7 +66,7 @@ class TestGetCredential:
         with pytest.raises(AuthenticationError, match="requires"):
             get_credential(method=AuthMethod.SERVICE_PRINCIPAL, tenant_id="t")
 
-    @patch("tenova.auth.DefaultAzureCredential")
+    @patch("azure_sub_migrator.auth.DefaultAzureCredential")
     def test_default_credential(self, mock_default_cls):
         mock_cred = MagicMock()
         mock_token = MagicMock()

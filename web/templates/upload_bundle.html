@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Upload Migration Bundle – Azure Sub Migrator{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Upload Bundle</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-header bg-warning bg-opacity-10 fw-semibold">
+        <i class="bi bi-upload me-2"></i>Upload Migration Bundle
+      </div>
+      <div class="card-body">
+        <p class="text-body-secondary">
+          After transferring your subscription to the target tenant, upload the migration bundle
+          you downloaded during the pre-transfer phase. Azure Sub Migrator will restore your RBAC assignments,
+          policies, locks, and Key Vault access policies automatically.
+        </p>
+
+        <form method="POST" enctype="multipart/form-data" action="{{ url_for('main.upload_bundle') }}" id="upload-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+          <div class="mb-4">
+            <label for="bundle" class="form-label fw-semibold">Migration Bundle (.zip)</label>
+            <div id="drop-zone" class="border border-2 border-dashed rounded-3 p-5 text-center"
+                 style="cursor: pointer; border-color: var(--bs-border-color);">
+              <i class="bi bi-cloud-arrow-up fs-1 text-primary mb-2 d-block"></i>
+              <p class="mb-1">Drag & drop your bundle file here</p>
+              <p class="text-body-secondary small mb-2">or click to browse</p>
+              <input type="file" name="bundle" id="bundle" accept=".zip"
+                     class="form-control d-none" required />
+              <span id="file-name" class="text-info fw-semibold"></span>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-lg w-100" id="upload-btn" disabled>
+            <i class="bi bi-box-arrow-in-up me-2"></i>Upload & Begin Restoration
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('bundle');
+  const fileName = document.getElementById('file-name');
+  const uploadBtn = document.getElementById('upload-btn');
+
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('border-primary');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('border-primary');
+  });
+
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('border-primary');
+    if (e.dataTransfer.files.length) {
+      fileInput.files = e.dataTransfer.files;
+      onFileSelected();
+    }
+  });
+
+  fileInput.addEventListener('change', onFileSelected);
+
+  function onFileSelected() {
+    if (fileInput.files.length) {
+      const f = fileInput.files[0];
+      fileName.textContent = `${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
+      uploadBtn.disabled = false;
+    }
+  }
+})();
+</script>
+{% endblock %}

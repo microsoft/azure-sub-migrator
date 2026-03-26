@@ -1,20 +1,22 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the readiness check module."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-
-from tenova.readiness import check_readiness
+from azure_sub_migrator.readiness import check_readiness
 
 
 class TestCheckReadiness:
     """Tests for the check_readiness function."""
 
-    @patch("tenova.readiness.list_managed_identities", return_value=[])
-    @patch("tenova.readiness.list_custom_roles", return_value=[])
-    @patch("tenova.readiness.list_role_assignments", return_value=[])
-    @patch("tenova.readiness.scan_subscription")
+    @patch("azure_sub_migrator.readiness.list_managed_identities", return_value=[])
+    @patch("azure_sub_migrator.readiness.list_custom_roles", return_value=[])
+    @patch("azure_sub_migrator.readiness.list_role_assignments", return_value=[])
+    @patch("azure_sub_migrator.readiness.scan_subscription")
     def test_ready_when_no_blockers(
         self, mock_scan, mock_assignments, mock_roles, mock_identities, mock_credential
     ):
@@ -33,10 +35,10 @@ class TestCheckReadiness:
         assert isinstance(result["warnings"], list)
         assert isinstance(result["info"], list)
 
-    @patch("tenova.readiness.list_managed_identities", return_value=[])
-    @patch("tenova.readiness.list_custom_roles", return_value=[])
-    @patch("tenova.readiness.list_role_assignments", return_value=[])
-    @patch("tenova.readiness.scan_subscription")
+    @patch("azure_sub_migrator.readiness.list_managed_identities", return_value=[])
+    @patch("azure_sub_migrator.readiness.list_custom_roles", return_value=[])
+    @patch("azure_sub_migrator.readiness.list_role_assignments", return_value=[])
+    @patch("azure_sub_migrator.readiness.scan_subscription")
     def test_not_ready_with_aks(
         self, mock_scan, mock_assignments, mock_roles, mock_identities, mock_credential
     ):
@@ -61,10 +63,10 @@ class TestCheckReadiness:
         assert "my-aks" in result["blockers"][0]["name"]
         assert "Cannot be transferred" in result["blockers"][0]["issue"]
 
-    @patch("tenova.readiness.list_managed_identities", return_value=[])
-    @patch("tenova.readiness.list_custom_roles", return_value=[])
-    @patch("tenova.readiness.list_role_assignments", return_value=[])
-    @patch("tenova.readiness.scan_subscription")
+    @patch("azure_sub_migrator.readiness.list_managed_identities", return_value=[])
+    @patch("azure_sub_migrator.readiness.list_custom_roles", return_value=[])
+    @patch("azure_sub_migrator.readiness.list_role_assignments", return_value=[])
+    @patch("azure_sub_migrator.readiness.scan_subscription")
     def test_not_ready_with_sql_entra_auth(
         self, mock_scan, mock_assignments, mock_roles, mock_identities, mock_credential
     ):
@@ -88,10 +90,10 @@ class TestCheckReadiness:
         assert len(result["blockers"]) == 1
         assert "Entra authentication" in result["blockers"][0]["issue"]
 
-    @patch("tenova.readiness.list_managed_identities", return_value=[])
-    @patch("tenova.readiness.list_custom_roles", return_value=[])
-    @patch("tenova.readiness.list_role_assignments", return_value=[])
-    @patch("tenova.readiness.scan_subscription")
+    @patch("azure_sub_migrator.readiness.list_managed_identities", return_value=[])
+    @patch("azure_sub_migrator.readiness.list_custom_roles", return_value=[])
+    @patch("azure_sub_migrator.readiness.list_role_assignments", return_value=[])
+    @patch("azure_sub_migrator.readiness.scan_subscription")
     def test_keyvault_is_warning_not_blocker(
         self, mock_scan, mock_assignments, mock_roles, mock_identities, mock_credential
     ):
@@ -116,10 +118,10 @@ class TestCheckReadiness:
         assert "Encryption" in result["warnings"][0]["issue"] or "Key Vault" in result["warnings"][0]["issue"]
         assert len(result["blockers"]) == 0
 
-    @patch("tenova.readiness.list_managed_identities")
-    @patch("tenova.readiness.list_custom_roles")
-    @patch("tenova.readiness.list_role_assignments")
-    @patch("tenova.readiness.scan_subscription")
+    @patch("azure_sub_migrator.readiness.list_managed_identities")
+    @patch("azure_sub_migrator.readiness.list_custom_roles")
+    @patch("azure_sub_migrator.readiness.list_role_assignments")
+    @patch("azure_sub_migrator.readiness.scan_subscription")
     def test_info_includes_rbac_counts(
         self, mock_scan, mock_assignments, mock_roles, mock_identities, mock_credential
     ):
@@ -147,10 +149,10 @@ class TestCheckReadiness:
         assert "1 custom role" in info_text
         assert "1 identity" in info_text
 
-    @patch("tenova.readiness.list_managed_identities", return_value=[])
-    @patch("tenova.readiness.list_custom_roles", return_value=[])
-    @patch("tenova.readiness.list_role_assignments", return_value=[])
-    @patch("tenova.readiness.scan_subscription")
+    @patch("azure_sub_migrator.readiness.list_managed_identities", return_value=[])
+    @patch("azure_sub_migrator.readiness.list_custom_roles", return_value=[])
+    @patch("azure_sub_migrator.readiness.list_role_assignments", return_value=[])
+    @patch("azure_sub_migrator.readiness.scan_subscription")
     def test_mixed_blockers_and_warnings(
         self, mock_scan, mock_assignments, mock_roles, mock_identities, mock_credential
     ):

@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Subscription transfer operations.
 
 Wraps the Azure Subscription API to move a subscription from one tenant
@@ -14,9 +17,9 @@ from __future__ import annotations
 
 from azure.core.credentials import TokenCredential
 
-from tenova.config import MigrationConfig
-from tenova.exceptions import TransferError
-from tenova.logger import get_logger
+from azure_sub_migrator.config import MigrationConfig
+from azure_sub_migrator.exceptions import TransferError
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("transfer")
 

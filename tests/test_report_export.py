@@ -1,11 +1,13 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the PDF and Excel report exporter module."""
 
 from __future__ import annotations
 
 import io
 
-from tenova.report_export import generate_excel, generate_pdf
-
+from azure_sub_migrator.report_export import generate_excel, generate_pdf
 
 # ── Shared fixtures ───────────────────────────────────────────────────
 

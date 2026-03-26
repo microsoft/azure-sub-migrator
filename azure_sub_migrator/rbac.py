@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """RBAC and managed-identity operations for cross-tenant transfer.
 
 Role assignments and custom role definitions are **permanently deleted**
@@ -21,8 +24,8 @@ from azure.core.credentials import TokenCredential
 from azure.mgmt.authorization import AuthorizationManagementClient
 from azure.mgmt.msi import ManagedServiceIdentityClient
 
-from tenova.exceptions import RBACError
-from tenova.logger import get_logger
+from azure_sub_migrator.exceptions import RBACError
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("rbac")
 

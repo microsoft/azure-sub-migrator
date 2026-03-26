@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Principal Mapping – Azure Sub Migrator{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.scan_status', task_id=task_id) }}">Scan Results</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('main.connect_target', task_id=task_id) }}">Connect Target</a></li>
+    <li class="breadcrumb-item active">Principal Mapping</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3><i class="bi bi-people me-2"></i>Principal Mapping</h3>
+  <span class="text-body-secondary">Target: <code>{{ target_user.get('preferred_username', '—') }}</code></span>
+</div>
+
+<!-- Step indicator -->
+<div class="d-flex align-items-center mb-4">
+  <span class="badge bg-success rounded-pill me-2 px-3 py-2"><i class="bi bi-check"></i></span>
+  <span class="text-success me-3">Connect Target Tenant</span>
+  <i class="bi bi-chevron-right text-secondary me-3"></i>
+  <span class="badge bg-primary rounded-pill me-2 px-3 py-2">2</span>
+  <strong class="me-3">Map Principals</strong>
+  <i class="bi bi-chevron-right text-secondary me-3"></i>
+  <span class="badge bg-secondary rounded-pill me-2 px-3 py-2">3</span>
+  <span class="text-secondary">Execute</span>
+</div>
+
+{% if not has_rbac_export %}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle me-2"></i>
+  <strong>No RBAC export found.</strong> For best results, export RBAC from the scan results page
+  <em>before</em> transferring the subscription. Without it, Azure Sub Migrator can still update Key Vault,
+  SQL, and App Service settings, but cannot recreate role assignments.
+  <br />
+  <a href="{{ url_for('main.scan_status', task_id=task_id) }}" class="btn btn-sm btn-outline-warning mt-2">
+    <i class="bi bi-arrow-left me-1"></i>Back to Scan Results
+  </a>
+</div>
+{% endif %}
+
+<form action="{{ url_for('main.save_principal_mapping', task_id=task_id) }}" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+  {% if principals %}
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-arrow-left-right me-2"></i>Map Source → Target Principals</span>
+      <span class="badge bg-primary">{{ principals | length }} principal(s)</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr>
+              <th style="width:5%">#</th>
+              <th style="width:15%">Type</th>
+              <th style="width:20%">Source Display Name</th>
+              <th style="width:20%">Source ID</th>
+              <th style="width:25%">Target Principal ID</th>
+              <th style="width:15%">Confidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in principals %}
+            <tr>
+              <td class="text-body-secondary">{{ loop.index }}</td>
+              <td>
+                {% if 'user' in p.object_type | lower %}
+                  <span class="badge bg-primary"><i class="bi bi-person me-1"></i>{{ p.object_type }}</span>
+                {% elif 'group' in p.object_type | lower %}
+                  <span class="badge bg-info"><i class="bi bi-people me-1"></i>{{ p.object_type }}</span>
+                {% elif 'service' in p.object_type | lower %}
+                  <span class="badge bg-warning text-dark"><i class="bi bi-gear me-1"></i>{{ p.object_type }}</span>
+                {% else %}
+                  <span class="badge bg-secondary">{{ p.object_type }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <strong>{{ p.display_name }}</strong>
+                {% if p.upn %}
+                  <br /><small class="text-body-secondary">{{ p.upn }}</small>
+                {% endif %}
+              </td>
+              <td><code class="small">{{ p.principal_id[:18] }}…</code></td>
+              <td>
+                {% set suggestions = p.get('suggestions', []) %}
+                {% if suggestions %}
+                  <select class="form-select form-select-sm font-monospace"
+                          name="mapping_{{ p.principal_id }}">
+                    <option value="">— skip (no mapping) —</option>
+                    {% for s in suggestions %}
+                      <option value="{{ s.id }}"
+                              {% if s.confidence == 'high' %}selected{% endif %}>
+                        {{ s.displayName }}
+                        {% if s.get('upn') %} ({{ s.upn }}){% endif %}
+                        [{{ s.confidence }}]
+                      </option>
+                    {% endfor %}
+                  </select>
+                {% else %}
+                  <input type="text" class="form-control form-control-sm font-monospace"
+                         name="mapping_{{ p.principal_id }}"
+                         placeholder="Enter target principal ID (UUID)"
+                         pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}" />
+                  <small class="text-body-secondary">No auto-match found — enter manually or skip</small>
+                {% endif %}
+              </td>
+              <td>
+                {% if suggestions %}
+                  {% set best = suggestions[0].confidence %}
+                  {% if best == 'high' %}
+                    <span class="badge bg-success">High</span>
+                  {% elif best == 'medium' %}
+                    <span class="badge bg-warning text-dark">Medium</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Low</span>
+                  {% endif %}
+                {% else %}
+                  <span class="badge bg-danger">None</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>
+    No principals to map. This can happen if there was no RBAC export or the export had no role assignments.
+    You can still proceed — Azure Sub Migrator will handle Key Vault, SQL, and other resource-level operations.
+  </div>
+  {% endif %}
+
+  <div class="d-flex justify-content-between">
+    <a href="{{ url_for('main.connect_target', task_id=task_id) }}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <button type="submit" class="btn btn-success btn-lg">
+      <i class="bi bi-play-fill me-1"></i>Run Post-Transfer Setup
+    </button>
+  </div>
+</form>
+
+{% endblock %}

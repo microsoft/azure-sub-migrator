@@ -1,4 +1,7 @@
-"""Custom exceptions for tenova."""
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+"""Custom exceptions for azure_sub_migrator."""
 
 
 class AzTenantMigrateError(Exception):

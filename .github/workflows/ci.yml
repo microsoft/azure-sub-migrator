@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/post-transfer]
   pull_request:
     branches: [main]
 
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v6
@@ -34,7 +34,7 @@ jobs:
         run: python -m pytest tests/ -v --tb=short
 
       - name: Dependency vulnerability scan (pip-audit)
-        run: pip-audit --strict
+        run: pip-audit -r requirements.txt --strict --ignore-vuln CVE-2026-4539  # pygments 2.19.2 — no fix available yet
 
       - name: Generate SBOM (CycloneDX)
         if: matrix.python-version == '3.12'

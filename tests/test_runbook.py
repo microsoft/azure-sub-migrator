@@ -1,9 +1,11 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Tests for the runbook generator module."""
 
 from __future__ import annotations
 
-from tenova.runbook import enrich_with_commands, generate_runbook
-
+from azure_sub_migrator.runbook import enrich_with_commands, generate_runbook
 
 # ── Shared fixtures ───────────────────────────────────────────────────
 

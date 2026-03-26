@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 #!/usr/bin/env python3
 """Azure Tenant-to-Tenant Migration CLI — entry point.
 
@@ -10,7 +13,7 @@ Usage:
     python main.py transfer -s <subscription-id> -t <target-tenant-id> [--dry-run]
 """
 
-from tenova.cli import main
+from azure_sub_migrator.cli import main
 
 if __name__ == "__main__":
     main()

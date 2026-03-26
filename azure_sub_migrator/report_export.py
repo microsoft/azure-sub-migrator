@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """PDF and Excel report exporter for migration scan results.
 
 Generates professional-looking reports that can be shared with
@@ -14,7 +17,7 @@ import io
 from datetime import datetime, timezone
 from typing import Any
 
-from tenova.logger import get_logger
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("report_export")
 
@@ -55,7 +58,7 @@ def generate_pdf(
     # ── Cover / Title ──────────────────────────────────────────────
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 24)
-    pdf.cell(0, 20, "Tenova", new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.cell(0, 20, "Azure Sub Migrator", new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.cell(0, 12, "Migration Report", new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.ln(10)
 
@@ -212,7 +215,7 @@ def generate_pdf(
         pdf.set_y(-15)
         pdf.set_font("Helvetica", "I", 8)
         pdf.set_text_color(150, 150, 150)
-        pdf.cell(0, 10, _safe(f"tenova  |  Page {page_num} of {pdf.pages_count}"), align="C")
+        pdf.cell(0, 10, _safe(f"azure-sub-migrator  |  Page {page_num} of {pdf.pages_count}"), align="C")
         pdf.set_text_color(0, 0, 0)
 
     return pdf.output()
@@ -270,7 +273,7 @@ def generate_excel(
     ws_summary.title = "Summary"
     ws_summary.sheet_properties.tabColor = "4472C4"
 
-    ws_summary["A1"] = "Tenova Migration Report"
+    ws_summary["A1"] = "Azure Sub Migrator — Migration Report"
     ws_summary["A1"].font = Font(bold=True, size=16, color="2E4057")
     ws_summary.merge_cells("A1:D1")
 
@@ -335,7 +338,10 @@ def generate_excel(
     ws_action = wb.create_sheet("Requires Action")
     ws_action.sheet_properties.tabColor = "CC3333"
 
-    action_headers = ["Name", "Type", "Resource Group", "Timing", "Pre-Transfer Action", "Post-Transfer Action", "MS Learn Docs"]
+    action_headers = [
+        "Name", "Type", "Resource Group", "Timing",
+        "Pre-Transfer Action", "Post-Transfer Action", "MS Learn Docs",
+    ]
     action_fill = PatternFill(start_color="CC3333", end_color="CC3333", fill_type="solid")
     for col_idx, header in enumerate(action_headers, 1):
         cell = ws_action.cell(row=1, column=col_idx, value=header)
@@ -361,7 +367,11 @@ def generate_excel(
             r.get("post_action", "") or "-",
             r.get("doc_url", "") or "-",
         ]
-        stripe = PatternFill(start_color="FFF5F5", end_color="FFF5F5", fill_type="solid") if excel_row % 2 == 0 else None
+        stripe = (
+            PatternFill(start_color="FFF5F5", end_color="FFF5F5", fill_type="solid")
+            if excel_row % 2 == 0
+            else None
+        )
         for col_idx, val in enumerate(values, 1):
             cell = ws_action.cell(row=excel_row, column=col_idx, value=val)
             cell.border = thin_border

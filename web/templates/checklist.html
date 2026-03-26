@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Migration Checklist – Tenova{% endblock %}
+{% block title %}Migration Checklist – Azure Sub Migrator{% endblock %}
 
 {% block extra_head %}
 <style nonce="{{ csp_nonce }}">
@@ -110,8 +110,8 @@
             <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az role assignment list --subscription {{ subscription_id }} --all --output json > rbac_assignments.json</div>
             <div class="cmd-desc mt-2">Export custom role definitions</div>
             <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>az role definition list --custom-role-only true --subscription {{ subscription_id }} --output json > custom_roles.json</div>
-            <div class="cmd-desc mt-2">Or use Tenova CLI</div>
-            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>tenova export-rbac -s {{ subscription_id }}</div>
+            <div class="cmd-desc mt-2">Or use Azure Sub Migrator CLI</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>azure-sub-migrator export-rbac -s {{ subscription_id }}</div>
           </div>
         </div>
       </li>
@@ -200,7 +200,7 @@ az keyvault show --name "&lt;VAULT_NAME&gt;" --subscription {{ subscription_id }
             <i class="bi bi-terminal me-1"></i>Show CLI commands
           </button>
           <div class="collapse cmd-section" id="cmd-readiness">
-            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>tenova readiness-check -s {{ subscription_id }}</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>azure-sub-migrator readiness-check -s {{ subscription_id }}</div>
           </div>
         </div>
       </li>
@@ -222,8 +222,8 @@ az keyvault show --name "&lt;VAULT_NAME&gt;" --subscription {{ subscription_id }
           <div class="collapse cmd-section" id="cmd-transfer">
             <div class="cmd-desc">Azure Portal (open in browser)</div>
             <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>https://portal.azure.com/#@/resource/subscriptions/{{ subscription_id }}/changeDirectory</div>
-            <div class="cmd-desc mt-2">Tenova CLI</div>
-            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>tenova transfer -s {{ subscription_id }} -t &lt;TARGET_TENANT_ID&gt;</div>
+            <div class="cmd-desc mt-2">Azure Sub Migrator CLI</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>azure-sub-migrator transfer -s {{ subscription_id }} -t &lt;TARGET_TENANT_ID&gt;</div>
           </div>
         </div>
       </li>
@@ -249,8 +249,8 @@ az keyvault show --name "&lt;VAULT_NAME&gt;" --subscription {{ subscription_id }
             <i class="bi bi-terminal me-1"></i>Show CLI commands
           </button>
           <div class="collapse cmd-section" id="cmd-import-rbac">
-            <div class="cmd-desc">Using Tenova CLI (recommended)</div>
-            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>tenova import-rbac -s {{ subscription_id }} -f rbac_assignments.json -m principal_mapping.json</div>
+            <div class="cmd-desc">Using Azure Sub Migrator CLI (recommended)</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>azure-sub-migrator import-rbac -s {{ subscription_id }} -f rbac_assignments.json -m principal_mapping.json</div>
             <div class="cmd-desc mt-2">Or manually, per assignment</div>
             <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button># az role assignment create --assignee "&lt;NEW_PRINCIPAL_ID&gt;" \
 #   --role "&lt;ROLE_NAME_OR_ID&gt;" --scope "&lt;SCOPE&gt;"</div>
@@ -358,13 +358,13 @@ az storage account keys renew --account-name "&lt;ACCOUNT&gt;" \
       <li class="list-group-item d-flex align-items-start gap-3" data-item="rescan">
         <input type="checkbox" class="form-check-input mt-1 checklist-check" />
         <div class="flex-grow-1">
-          <strong>Run a follow-up Tenova scan in the target tenant</strong>
+          <strong>Run a follow-up Azure Sub Migrator scan in the target tenant</strong>
           <div class="text-body-secondary small">Perform another scan to confirm all impacted resources have been remediated.</div>
           <button class="cmd-toggle" data-bs-toggle="collapse" data-bs-target="#cmd-rescan">
             <i class="bi bi-terminal me-1"></i>Show CLI commands
           </button>
           <div class="collapse cmd-section" id="cmd-rescan">
-            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>tenova scan -s {{ subscription_id }}</div>
+            <div class="cmd-block"><button class="cmd-copy-btn" onclick="copyCmd(this)">Copy</button>azure-sub-migrator scan -s {{ subscription_id }}</div>
           </div>
         </div>
       </li>

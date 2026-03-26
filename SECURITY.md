@@ -1,36 +1,55 @@
-# Security Policy
+<!-- BEGIN MICROSOFT SECURITY.MD V0.0.9 BLOCK -->
 
-## Reporting a Vulnerability
+## Security
 
-If you discover a security vulnerability in Tenova, please report it
-responsibly.
+Microsoft takes the security of our software products and services seriously,
+which includes all source code repositories managed through our GitHub
+organizations, which include [Microsoft](https://github.com/Microsoft),
+[Azure](https://github.com/Azure), [DotNet](https://github.com/dotnet),
+[AspNet](https://github.com/aspnet) and [Xamarin](https://github.com/xamarin).
 
-**Do NOT open a public GitHub issue for security vulnerabilities.**
+If you believe you have found a security vulnerability in any Microsoft-owned
+repository that meets
+[Microsoft's definition of a security vulnerability](https://aka.ms/security.md/definition),
+please report it to us as described below.
 
-Instead, please email: **security@learnazurewithmo.com**
+## Reporting Security Issues
 
-Include:
+**Please do not report security vulnerabilities through public GitHub issues.**
 
-- A description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
+Instead, please report them to the Microsoft Security Response Center (MSRC) at
+[https://msrc.microsoft.com/create-report](https://aka.ms/security.md/msrc/create-report).
 
-We will acknowledge your report within **48 hours** and provide a
-detailed response within **7 business days**.
+If you prefer to submit without logging in, send email to
+[secure@microsoft.com](mailto:secure@microsoft.com). If possible, encrypt your
+message with our PGP key; please download it from the
+[Microsoft Security Response Center PGP Key page](https://aka.ms/security.md/msrc/pgp).
 
-## Supported Versions
+You should receive a response within 24 hours. If for some reason you do not,
+please follow up via email to ensure we received your original message.
+Additional information can be found at
+[microsoft.com/msrc](https://www.microsoft.com/msrc).
 
-| Version | Supported |
-| ------- | --------- |
-| 0.1.x   | ✅        |
+Please include the requested information listed below (as much as you can
+provide) to help us better understand the nature and scope of the possible issue:
 
-## Security Practices
+- Type of issue (e.g. buffer overflow, SQL injection, cross-site scripting, etc.)
+- Full paths of source file(s) related to the manifestation of the issue
+- The location of the affected source code (tag/branch/commit or direct URL)
+- Any special configuration required to reproduce the issue
+- Step-by-step instructions to reproduce the issue
+- Proof-of-concept or exploit code (if possible)
+- Impact of the issue, including how an attacker might exploit the issue
 
-- All authentication uses **MSAL** (Microsoft Authentication Library).
-- No credentials are stored — only short-lived OAuth tokens in
-  server-side sessions.
-- Dependencies are monitored via **Dependabot** and **pip-audit**.
-- Static analysis is performed via **CodeQL** and **Ruff** in CI.
-- The web UI enforces **CSRF protection**, **secure cookie flags**,
-  and standard **security headers** (CSP, HSTS, X-Frame-Options).
+This information will help us triage your report more quickly.
+
+## Preferred Languages
+
+We prefer all communications to be in English.
+
+## Policy
+
+Microsoft follows the principle of
+[Coordinated Vulnerability Disclosure](https://aka.ms/security.md/cvd).
+
+<!-- END MICROSOFT SECURITY.MD V0.0.9 BLOCK -->

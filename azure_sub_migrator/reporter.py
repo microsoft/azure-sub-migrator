@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Migration-plan reporter — writes human-readable Markdown reports.
 
 Report sections reflect cross-tenant subscription transfer semantics:
@@ -12,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tenova.logger import get_logger
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("reporter")
 
@@ -34,7 +37,7 @@ def write_plan_report(plan: dict[str, Any], output_path: Path) -> Path:
     lines: list[str] = []
     _h = lines.append  # shorthand
 
-    _h("# Tenova Migration Plan\n")
+    _h("# Azure Sub Migrator — Migration Plan\n")
     _h(f"**Generated:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
     _h(f"**Subscription:** `{plan.get('subscription_id', 'N/A')}`  ")
     _h(f"**Source Tenant:** `{plan.get('source_tenant_id', 'N/A')}`  ")
@@ -106,12 +109,12 @@ def write_plan_report(plan: dict[str, Any], output_path: Path) -> Path:
     _h("4. Back up Key Vault secrets, certificates, and keys.")
     _h("5. Disable Entra auth on SQL/MySQL/PostgreSQL if applicable.")
     _h("6. Export Azure Policy definitions and assignments.")
-    _h("7. Initiate the subscription transfer via Azure Portal or `tenova transfer`.")
+    _h("7. Initiate the subscription transfer via Azure Portal or `azure-sub-migrator transfer`.")
     _h("8. Complete ALL **Post-Transfer Actions** listed above.")
     _h("9. Recreate role assignments and managed identities in the target tenant.")
     _h("10. Validate all services in the target tenant.")
-    _h(f"\n> **Reference:** [Transfer an Azure subscription to a different Microsoft Entra directory]"
-        f"(https://learn.microsoft.com/en-us/azure/role-based-access-control/transfer-subscription)\n")
+    _h("\n> **Reference:** [Transfer an Azure subscription to a different Microsoft Entra directory]"
+        "(https://learn.microsoft.com/en-us/azure/role-based-access-control/transfer-subscription)\n")
 
     # Write
     output_path.parent.mkdir(parents=True, exist_ok=True)

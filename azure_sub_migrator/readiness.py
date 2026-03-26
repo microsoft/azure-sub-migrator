@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 """Pre-transfer readiness check.
 
 Validates whether a subscription is safe to transfer by scanning for
@@ -6,25 +9,30 @@ known blockers (⛔ — transfer will fail or cause data loss) and warnings
 
 Usage
 -----
+    # Full check (runs scan + RBAC listing):
     result = check_readiness(credential, subscription_id)
+
+    # Lightweight: classify existing scan results (no API calls):
+    result = classify_readiness(scan_result)
+
     if not result["ready"]:
         print("Blockers found — do NOT transfer yet!")
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from azure.core.credentials import TokenCredential
 
-from tenova.constants import REQUIRED_ACTIONS
-from tenova.scanner import scan_subscription
-from tenova.rbac import (
-    list_role_assignments,
+from azure_sub_migrator.logger import get_logger
+from azure_sub_migrator.rbac import (
     list_custom_roles,
     list_managed_identities,
+    list_role_assignments,
 )
-from tenova.logger import get_logger
+from azure_sub_migrator.scanner import scan_subscription
 
 logger = get_logger("readiness")
 
@@ -60,6 +68,8 @@ _CMK_WARNING_TYPES: set[str] = {
 def check_readiness(
     credential: TokenCredential,
     subscription_id: str,
+    *,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, Any]:
     """Run a comprehensive pre-transfer readiness check.
 
@@ -69,6 +79,7 @@ def check_readiness(
     - ``warnings``: list of warning dicts (should fix, risk if ignored)
     - ``info``: list of informational items
     """
+    _progress = on_progress or (lambda *_: None)
     logger.info("Running readiness check for subscription %s …", subscription_id)
 
     blockers: list[dict[str, str]] = []
@@ -76,6 +87,7 @@ def check_readiness(
     info: list[dict[str, str]] = []
 
     # ── 1. Scan resources ──────────────────────────────────────────
+    _progress("Scanning resources", 1, 6)
     scan_result = scan_subscription(credential, subscription_id)
     requires_action = scan_result.get("requires_action", [])
 
@@ -131,6 +143,7 @@ def check_readiness(
             })
 
     # ── 2. Check RBAC ──────────────────────────────────────────────
+    _progress("Classifying resources", 2, 6)
     try:
         assignments = list_role_assignments(credential, subscription_id)
         if assignments:
@@ -138,7 +151,7 @@ def check_readiness(
                 "category": "RBAC Role Assignments",
                 "detail": (
                     f"{len(assignments)} role assignment(s) will be PERMANENTLY DELETED. "
-                    f"Run 'tenova export-rbac' to save them before transfer."
+                    f"Run 'azure-sub-migrator export-rbac' to save them before transfer."
                 ),
             })
     except Exception as exc:
@@ -150,6 +163,7 @@ def check_readiness(
         })
 
     # ── 3. Check custom roles ──────────────────────────────────────
+    _progress("Checking RBAC assignments", 3, 6)
     try:
         custom_roles = list_custom_roles(credential, subscription_id)
         if custom_roles:
@@ -157,13 +171,14 @@ def check_readiness(
                 "category": "Custom Roles",
                 "detail": (
                     f"{len(custom_roles)} custom role(s) will be PERMANENTLY DELETED. "
-                    f"Run 'tenova export-rbac' to save them before transfer."
+                    f"Run 'azure-sub-migrator export-rbac' to save them before transfer."
                 ),
             })
     except Exception:
         pass  # Non-critical — already warned about RBAC access
 
     # ── 4. Check managed identities ────────────────────────────────
+    _progress("Checking custom roles", 4, 6)
     try:
         identities = list_managed_identities(credential, subscription_id)
         if identities:
@@ -178,6 +193,7 @@ def check_readiness(
         pass  # Non-critical
 
     # ── 5. Summary info ────────────────────────────────────────────
+    _progress("Checking managed identities", 5, 6)
     total_resources = (
         len(scan_result.get("transfer_safe", []))
         + len(requires_action)
@@ -193,8 +209,136 @@ def check_readiness(
 
     ready = len(blockers) == 0
 
+    _progress("Complete", 6, 6)
+
     logger.info(
         "Readiness check complete: %s (%d blockers, %d warnings, %d info)",
+        "READY" if ready else "NOT READY",
+        len(blockers),
+        len(warnings),
+        len(info),
+    )
+
+    return {
+        "ready": ready,
+        "blockers": blockers,
+        "warnings": warnings,
+        "info": info,
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Lightweight classification (no API calls)
+# ──────────────────────────────────────────────────────────────────────
+
+def classify_readiness(
+    scan_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Classify scan results into blockers/warnings/info without any API calls.
+
+    This is the fast path: it re-uses an already-completed scan result
+    to produce the same readiness verdict that ``check_readiness()``
+    would, but without re-scanning the subscription or re-listing RBAC.
+
+    Parameters
+    ----------
+    scan_result:
+        A completed scan result dict with ``transfer_safe`` and
+        ``requires_action`` keys.
+
+    Returns
+    -------
+    Same shape as ``check_readiness()``:
+    ``{ready, blockers, warnings, info}``.
+    """
+    blockers: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
+    info: list[dict[str, str]] = []
+
+    requires_action = scan_result.get("requires_action", [])
+
+    for resource in requires_action:
+        rtype = resource.get("type", "")
+        rname = resource.get("name", "")
+        timing = resource.get("timing", "post")
+        pre_action = resource.get("pre_action", "")
+
+        # Also walk children
+        items = [resource] + resource.get("children", [])
+        for item in items:
+            itype = item.get("type", rtype)
+            iname = item.get("name", rname)
+            itiming = item.get("timing", timing)
+            ipre = item.get("pre_action", pre_action)
+
+            if itype in _BLOCKER_TYPES:
+                blockers.append({
+                    "name": iname,
+                    "type": itype,
+                    "issue": "Cannot be transferred to a different tenant",
+                    "action": ipre or "Must be deleted and recreated in the target tenant.",
+                })
+            elif itype in _ENTRA_AUTH_BLOCKERS:
+                blockers.append({
+                    "name": iname,
+                    "type": itype,
+                    "issue": "Cannot transfer with Entra authentication enabled",
+                    "action": ipre or "Disable Entra authentication before transfer.",
+                })
+            elif itype in _CMK_WARNING_TYPES:
+                warnings.append({
+                    "name": iname,
+                    "type": itype,
+                    "issue": "Encryption/Key Vault dependency — risk of unrecoverable data loss",
+                    "action": ipre or "Disable CMK and export access policies before transfer.",
+                })
+            elif itype.startswith("Microsoft.Authorization/policy"):
+                warnings.append({
+                    "name": iname,
+                    "type": itype,
+                    "issue": "Permanently deleted during transfer",
+                    "action": ipre or "Export before transfer.",
+                })
+            elif itype.startswith("Microsoft.Authorization/role"):
+                warnings.append({
+                    "name": iname,
+                    "type": itype,
+                    "issue": "Permanently deleted during transfer",
+                    "action": ipre or "Export RBAC before transfer.",
+                })
+            elif itype == "Microsoft.Authorization/locks":
+                warnings.append({
+                    "name": iname,
+                    "type": itype,
+                    "issue": "Must be re-created after transfer",
+                    "action": ipre or "Export locks before transfer.",
+                })
+            elif itiming in ("pre", "both") and ipre:
+                warnings.append({
+                    "name": iname,
+                    "type": itype,
+                    "issue": "Requires pre-transfer action",
+                    "action": ipre,
+                })
+
+    # Summary info
+    total = (
+        len(scan_result.get("transfer_safe", []))
+        + len(requires_action)
+    )
+    info.append({
+        "category": "Total Resources",
+        "detail": (
+            f"{total} resource(s) scanned: "
+            f"{len(scan_result.get('transfer_safe', []))} transfer-safe, "
+            f"{len(requires_action)} require action."
+        ),
+    })
+
+    ready = len(blockers) == 0
+
+    logger.info(
+        "Readiness classification: %s (%d blockers, %d warnings, %d info)",
         "READY" if ready else "NOT READY",
         len(blockers),
         len(warnings),

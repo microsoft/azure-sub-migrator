@@ -1,4 +1,7 @@
-"""Authentication module for tenova.
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
+"""Authentication module for azure_sub_migrator.
 
 Supports three credential strategies:
   1. Azure CLI credentials (default) — uses the logged-in ``az`` session.
@@ -12,18 +15,17 @@ passed directly to any Azure SDK management client.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
+from azure.core.credentials import TokenCredential
 from azure.identity import (
     AzureCliCredential,
     ClientSecretCredential,
     DefaultAzureCredential,
     ManagedIdentityCredential,
 )
-from azure.core.credentials import TokenCredential
 
-from tenova.exceptions import AuthenticationError
-from tenova.logger import get_logger
+from azure_sub_migrator.exceptions import AuthenticationError
+from azure_sub_migrator.logger import get_logger
 
 logger = get_logger("auth")
 
@@ -40,9 +42,9 @@ class AuthMethod(str, Enum):
 def get_credential(
     method: str | AuthMethod = AuthMethod.CLI,
     *,
-    tenant_id: Optional[str] = None,
-    client_id: Optional[str] = None,
-    client_secret: Optional[str] = None,
+    tenant_id: str | None = None,
+    client_id: str | None = None,
+    client_secret: str | None = None,
 ) -> TokenCredential:
     """Return an Azure ``TokenCredential`` for the requested auth method.
 
@@ -99,7 +101,7 @@ def get_credential(
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _get_cli_credential(*, tenant_id: Optional[str] = None) -> AzureCliCredential:
+def _get_cli_credential(*, tenant_id: str | None = None) -> AzureCliCredential:
     """Authenticate using the Azure CLI session."""
     kwargs: dict = {}
     if tenant_id:
@@ -113,9 +115,9 @@ def _get_cli_credential(*, tenant_id: Optional[str] = None) -> AzureCliCredentia
 
 def _get_service_principal_credential(
     *,
-    tenant_id: Optional[str],
-    client_id: Optional[str],
-    client_secret: Optional[str],
+    tenant_id: str | None,
+    client_id: str | None,
+    client_secret: str | None,
 ) -> ClientSecretCredential:
     """Authenticate using a service principal (client-id + secret)."""
     if not all([tenant_id, client_id, client_secret]):
@@ -134,7 +136,7 @@ def _get_service_principal_credential(
 
 
 def _get_managed_identity_credential(
-    *, client_id: Optional[str] = None,
+    *, client_id: str | None = None,
 ) -> ManagedIdentityCredential:
     """Authenticate using a managed identity."""
     kwargs: dict = {}
@@ -146,7 +148,7 @@ def _get_managed_identity_credential(
     return credential
 
 
-def _get_default_credential(*, tenant_id: Optional[str] = None) -> DefaultAzureCredential:
+def _get_default_credential(*, tenant_id: str | None = None) -> DefaultAzureCredential:
     """Use the ``DefaultAzureCredential`` chain."""
     kwargs: dict = {}
     if tenant_id:
