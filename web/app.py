@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 from datetime import timedelta
@@ -23,6 +24,68 @@ limiter = Limiter(
     default_limits=["120 per minute"],
     storage_uri="memory://",
 )
+
+_log = logging.getLogger(__name__)
+
+
+def _build_redis_client(redis_host: str, redis_url: str):
+    """Build a Redis client for Flask-Session (same strategy as tasks.py).
+
+    1. **REDIS_HOST** → Entra ID (DefaultAzureCredential), passwordless.
+    2. **REDIS_URL**  → access-key URL (``rediss://``).
+
+    Returns a connected ``redis.Redis`` instance, or *None* on failure
+    (caller falls back to filesystem sessions).
+    """
+    try:
+        import redis as _redis_mod
+        from redis.backoff import ExponentialBackoff
+        from redis.retry import Retry
+
+        _retry = Retry(ExponentialBackoff(cap=5, base=0.25), retries=5)
+        _common = dict(
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            retry_on_timeout=True,
+            retry=_retry,
+            retry_on_error=[ConnectionError, TimeoutError, OSError],
+            health_check_interval=30,
+        )
+
+        if redis_host:
+            import base64
+            import json as _json_mod
+
+            from azure.identity import DefaultAzureCredential
+
+            _cred = DefaultAzureCredential()
+            _scope = "https://redis.azure.com/.default"
+
+            class _EntraCredProvider(_redis_mod.CredentialProvider):
+                def get_credentials(self):
+                    token = _cred.get_token(_scope).token
+                    payload = token.split(".")[1]
+                    payload += "=" * (-len(payload) % 4)
+                    claims = _json_mod.loads(base64.urlsafe_b64decode(payload))
+                    return claims.get("oid", ""), token
+
+            client = _redis_mod.Redis(
+                host=redis_host,
+                port=int(os.environ.get("REDIS_PORT", "10000")),
+                ssl=True,
+                credential_provider=_EntraCredProvider(),
+                **_common,
+            )
+        else:
+            client = _redis_mod.from_url(redis_url, **_common)
+
+        client.ping()
+        _log.info("Redis session backend connected")
+        return client
+    except Exception:
+        _log.warning("Redis unavailable for sessions — falling back to filesystem", exc_info=True)
+        return None
 
 
 def create_app() -> Flask:
@@ -61,14 +124,35 @@ def create_app() -> Flask:
     # store both source and target tenant tokens.  Flask-Session
     # keeps session data on the server; only a tiny session ID cookie
     # is sent to the browser.
-    app.config["SESSION_TYPE"] = "filesystem"
-    app.config["SESSION_FILE_DIR"] = os.path.join(
-        "/tmp" if is_azure else os.path.join(os.getcwd(), ".flask_sessions"),
-        "flask_sessions",
-    )
+    #
+    # Production (REDIS_HOST set):  Redis-backed sessions survive
+    #   restarts, scale-out, and slot swaps.
+    # Local dev / single instance:  Filesystem fallback — no Redis needed.
+    redis_host = os.environ.get("REDIS_HOST", "")
+    redis_url = os.environ.get("REDIS_URL", "")
+
+    if redis_host or redis_url:
+        redis_client = _build_redis_client(redis_host, redis_url)
+        if redis_client is not None:
+            app.config["SESSION_TYPE"] = "redis"
+            app.config["SESSION_REDIS"] = redis_client
+            app.config["SESSION_KEY_PREFIX"] = "azsm:session:"
+        else:
+            # Redis configured but unreachable — fall back to filesystem
+            app.config["SESSION_TYPE"] = "filesystem"
+            app.config["SESSION_FILE_DIR"] = os.path.join(
+                os.getcwd(), ".flask_sessions", "flask_sessions",
+            )
+            app.config["SESSION_FILE_THRESHOLD"] = 200
+    else:
+        app.config["SESSION_TYPE"] = "filesystem"
+        app.config["SESSION_FILE_DIR"] = os.path.join(
+            os.getcwd(), ".flask_sessions", "flask_sessions",
+        )
+        app.config["SESSION_FILE_THRESHOLD"] = 200    # max files before cleanup
+
     app.config["SESSION_PERMANENT"] = True
     app.config["SESSION_USE_SIGNER"] = True           # sign the session ID cookie
-    app.config["SESSION_FILE_THRESHOLD"] = 200        # max files before cleanup
     Session(app)
 
     # Session idle timeout (default 30 minutes)

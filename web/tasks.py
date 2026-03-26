@@ -44,10 +44,6 @@ from azure_sub_migrator.scanner import list_subscriptions, scan_subscription
 logger = get_logger("tasks")
 
 
-def _sanitize_log(value: str) -> str:
-    """Strip control characters to prevent log injection."""
-    return value.replace("\n", "").replace("\r", "").replace("\t", "")
-
 # Maximum age of a completed/failed task before it is evicted (seconds).
 TASK_TTL_SECONDS: int = 2 * 60 * 60  # 2 hours
 # Hard cap on total tasks to prevent memory exhaustion.

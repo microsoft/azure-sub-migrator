@@ -33,16 +33,6 @@ from markupsafe import escape
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
-def _safe_redirect_back() -> str:
-    """Return the referrer only when it shares the same host, else dashboard."""
-    referrer = request.referrer
-    if referrer:
-        parsed = urlparse(referrer)
-        if not parsed.netloc or parsed.netloc == request.host:
-            return referrer
-    return url_for("main.dashboard")
-
-
 # ──────────────────────────────────────────────────────────────────────
 # Helpers — MSAL token cache persistence
 # ──────────────────────────────────────────────────────────────────────
