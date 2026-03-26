@@ -179,6 +179,44 @@ def list_managed_identities(
 # Export / Import
 # ──────────────────────────────────────────────────────────────────────
 
+def export_rbac_data(
+    credential: TokenCredential,
+    subscription_id: str,
+) -> dict[str, Any]:
+    """Export RBAC data entirely in-memory (no disk writes).
+
+    Returns a dict containing role assignments, custom roles, managed
+    identities, and a summary.  Used by the web UI to avoid writing
+    customer data to the server filesystem.
+    """
+    logger.info("Exporting RBAC for subscription %s …", subscription_id)
+
+    assignments = list_role_assignments(credential, subscription_id)
+    custom = list_custom_roles(credential, subscription_id)
+    identities = list_managed_identities(credential, subscription_id)
+
+    export_data = {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "subscription_id": subscription_id,
+        "role_assignments": assignments,
+        "custom_roles": custom,
+        "managed_identities": identities,
+        "summary": {
+            "role_assignment_count": len(assignments),
+            "custom_role_count": len(custom),
+            "managed_identity_count": len(identities),
+        },
+    }
+
+    logger.info(
+        "RBAC export complete  (%d assignments, %d custom roles, %d identities)",
+        len(assignments),
+        len(custom),
+        len(identities),
+    )
+    return export_data
+
+
 def export_rbac(
     credential: TokenCredential,
     subscription_id: str,
@@ -190,6 +228,9 @@ def export_rbac(
     recreate RBAC in the target tenant after the subscription transfer.
 
     Returns the path to the exported JSON file.
+
+    .. note:: For the web UI, prefer :func:`export_rbac_data` which
+       keeps everything in-memory and never writes to disk.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

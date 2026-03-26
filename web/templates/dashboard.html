@@ -573,13 +573,28 @@ $(function () {
     } else {
       $('#wf-portal-link').attr('href', '#').addClass('disabled');
     }
-    if (changed) resetWorkflow();
+    if (changed) {
+      // Tell the server to clear subscription-scoped state (bundle, mapping, tasks)
+      $.ajax({
+        url: '{{ url_for("main.api_clear_workflow") }}',
+        method: 'POST',
+        headers: {'X-CSRFToken': wfState.csrfToken},
+        contentType: 'application/json'
+      });
+      // Override server flags so resetWorkflow uses fresh values
+      wfState._bundleCleared = true;
+      resetWorkflow();
+    }
   }
 
   function resetWorkflow() {
-    // Server-side session flags — these persist across page loads
-    var serverHasBundle = {{ 'true' if has_bundle else 'false' }};
+    // Server-side session flags — these persist across page loads.
+    // If the user just changed subscription, _bundleCleared overrides
+    // the stale server-injected values until the next full page load.
+    var subChanged = wfState._bundleCleared || false;
+    var serverHasBundle = subChanged ? false : {{ 'true' if has_bundle else 'false' }};
     var serverTargetConnected = {{ 'true' if target_tenant_connected else 'false' }};
+    wfState._bundleCleared = false;  // reset the flag
 
     // Clear task state
     wfState.scanTaskId = null;
@@ -843,6 +858,14 @@ $(function () {
               });
               html += '</ul></div>';
             }
+
+            // Download buttons
+            html += '<div class="mt-3 d-flex gap-2">' +
+              '<a href="/export/pdf/' + wfState.scanTaskId + '" class="btn btn-outline-danger btn-sm">' +
+              '<i class="bi bi-file-earmark-pdf me-1"></i>Download PDF</a>' +
+              '<a href="/export/excel/' + wfState.scanTaskId + '" class="btn btn-outline-success btn-sm">' +
+              '<i class="bi bi-file-earmark-spreadsheet me-1"></i>Download Excel</a>' +
+              '</div>';
 
             $r.html(html);
             markDone($('#wf-step-scan'));
