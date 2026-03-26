@@ -435,11 +435,12 @@ def get_task(task_id: str, *, owner_id: str = "") -> TaskResult | None:
         return None
     # Enforce ownership — owner_id may be empty in tests / CLI usage
     if owner_id and task.owner_id and task.owner_id != owner_id:
+        safe_tid = task_id.replace('\r\n', '').replace('\n', '')
         safe_expected = str(task.owner_id).replace('\r\n', '').replace('\n', '')
         safe_got = str(owner_id).replace('\r\n', '').replace('\n', '')
         logger.warning(
             "Task %s ownership mismatch: expected %s, got %s",
-            task_id, safe_expected, safe_got,
+            safe_tid, safe_expected, safe_got,
         )
         return None
     # Passive timeout check — fail tasks that have been running too long
