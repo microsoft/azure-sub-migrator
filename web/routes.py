@@ -48,6 +48,31 @@ def _get_owner_id() -> str:
     return session.get("user", {}).get("oid", "")
 
 
+# Keys that are scoped to a specific subscription and must be cleared
+# when the user starts a new scan or changes subscription.  Target tenant
+# auth keys are intentionally NOT included — they are tenant-scoped and
+# remain valid across subscription changes.
+_SUB_SCOPED_SESSION_KEYS = (
+    "bundle_manifest",
+    "bundle_artifacts",
+    "principal_mapping",
+    "last_pre_transfer_task",
+    "last_rbac_task_id",
+    "last_rbac_sub",
+)
+
+
+def _clear_subscription_state() -> None:
+    """Remove subscription-scoped workflow state from the session.
+
+    Called when the user starts a new scan or switches subscription so
+    stale bundle data, principal mappings, and task references from the
+    previous subscription don't carry over.
+    """
+    for key in _SUB_SCOPED_SESSION_KEYS:
+        session.pop(key, None)
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Health Check (unauthenticated — used by App Service health probes)
 # ──────────────────────────────────────────────────────────────────────
@@ -89,7 +114,13 @@ def dashboard():
     tenant_id = session.get("tenant_id", "")
     subscription_id = session.get("last_scan_sub", "")
     bundle_manifest = session.get("bundle_manifest")
-    has_bundle = bundle_manifest is not None
+    # Only show the bundle as loaded if it matches the current subscription
+    has_bundle = (
+        bundle_manifest is not None
+        and bundle_manifest.get("subscription_id", "") == subscription_id
+    )
+    if not has_bundle:
+        bundle_manifest = None
     return render_template(
         "dashboard.html",
         subscriptions=subs,
@@ -119,6 +150,7 @@ def scan():
     if not _UUID_RE.match(subscription_id):
         return jsonify({"error": "subscription_id must be a valid UUID"}), 400
 
+    _clear_subscription_state()
     token = get_access_token()
     task_id = start_scan(token, subscription_id, owner_id=_get_owner_id())
     session["last_scan_sub"] = subscription_id
@@ -205,6 +237,7 @@ def api_start_scan():
     if not subscription_id or not _UUID_RE.match(subscription_id):
         return jsonify({"error": "Valid subscription_id is required"}), 400
 
+    _clear_subscription_state()
     token = get_access_token()
     task_id = start_scan(token, subscription_id, owner_id=_get_owner_id())
     session["last_scan_sub"] = subscription_id
