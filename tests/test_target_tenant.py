@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlparse
 
 from azure_sub_migrator.target_tenant import (
     build_target_auth_url,
@@ -51,7 +52,9 @@ class TestBuildTargetAuthUrl:
             state="s",
             scopes=["https://graph.microsoft.com/.default"],
         )
-        assert "https://graph.microsoft.com/" in url
+        parsed = urlparse(url)
+        assert parsed.hostname == "login.microsoftonline.com"
+        assert ".default" in parsed.query
 
 
 # ──────────────────────────────────────────────────────────────────────

@@ -77,7 +77,7 @@ def audit_log(
     if extra:
         record["extra"] = extra
 
-    safe_json = json.dumps(record, default=str).replace("\n", "").replace("\r", "")
+    safe_json = json.dumps(record, default=str).replace('\r\n', '').replace('\n', '')
     _audit_logger.info(safe_json)
 
 

@@ -308,7 +308,8 @@ def start_scan(access_token: str, subscription_id: str, *, owner_id: str = "") -
         daemon=True,
     )
     thread.start()
-    logger.info("Scan task %s started for subscription %s", task_id, _sanitize_log(subscription_id))
+    safe_sub = subscription_id.replace('\r\n', '').replace('\n', '')
+    logger.info("Scan task %s started for subscription %s", task_id, safe_sub)
     return task_id
 
 
@@ -324,7 +325,8 @@ def start_readiness_check(access_token: str, subscription_id: str, *, owner_id: 
         daemon=True,
     )
     thread.start()
-    logger.info("Readiness task %s started for subscription %s", task_id, _sanitize_log(subscription_id))
+    safe_sub = subscription_id.replace('\r\n', '').replace('\n', '')
+    logger.info("Readiness task %s started for subscription %s", task_id, safe_sub)
     return task_id
 
 
@@ -340,7 +342,8 @@ def start_rbac_export(access_token: str, subscription_id: str, *, owner_id: str 
         daemon=True,
     )
     thread.start()
-    logger.info("RBAC export task %s started for subscription %s", task_id, _sanitize_log(subscription_id))
+    safe_sub = subscription_id.replace('\r\n', '').replace('\n', '')
+    logger.info("RBAC export task %s started for subscription %s", task_id, safe_sub)
     return task_id
 
 
@@ -366,10 +369,10 @@ def start_post_transfer(
         daemon=True,
     )
     thread.start()
-    safe_sub = subscription_id.replace("\n", "").replace("\r", "")
+    safe_sub = subscription_id.replace('\r\n', '').replace('\n', '')
     logger.info(
         "Post-transfer task %s started for subscription %s (dry_run=%s)",
-        task_id, safe_sub, dry_run,
+        task_id, safe_sub, bool(dry_run),
     )
     return task_id
 
@@ -416,7 +419,8 @@ def start_pre_transfer(
         daemon=True,
     )
     thread.start()
-    logger.info("Pre-transfer task %s started for subscription %s", task_id, _sanitize_log(subscription_id))
+    safe_sub = subscription_id.replace('\r\n', '').replace('\n', '')
+    logger.info("Pre-transfer task %s started for subscription %s", task_id, safe_sub)
     return task_id
 
 
@@ -431,11 +435,11 @@ def get_task(task_id: str, *, owner_id: str = "") -> TaskResult | None:
         return None
     # Enforce ownership — owner_id may be empty in tests / CLI usage
     if owner_id and task.owner_id and task.owner_id != owner_id:
+        safe_expected = str(task.owner_id).replace('\r\n', '').replace('\n', '')
+        safe_got = str(owner_id).replace('\r\n', '').replace('\n', '')
         logger.warning(
             "Task %s ownership mismatch: expected %s, got %s",
-            task_id,
-            task.owner_id.replace("\n", "").replace("\r", ""),
-            owner_id.replace("\n", "").replace("\r", ""),
+            task_id, safe_expected, safe_got,
         )
         return None
     # Passive timeout check — fail tasks that have been running too long

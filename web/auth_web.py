@@ -193,6 +193,14 @@ def login():
         redirect_uri=request.url_root.rstrip("/") + current_app.config["ENTRA_REDIRECT_PATH"],
         prompt="select_account",  # always show account picker
     )
+    # Validate redirect target: must be https to login.microsoftonline.com
+    parsed = urlparse(auth_url)
+    if parsed.scheme != "https" or not (
+        parsed.hostname == "login.microsoftonline.com"
+        or (parsed.hostname and parsed.hostname.endswith(".login.microsoftonline.com"))
+    ):
+        flash("Invalid authentication URL.", "danger")
+        return redirect(url_for("main.dashboard"))
     return redirect(auth_url)
 
 
@@ -254,7 +262,7 @@ def target_tenant_login():
 
     if not target_tenant_id:
         flash("Target tenant ID is required.", "danger")
-        return redirect(_safe_redirect_back())
+        return redirect(url_for("main.dashboard"))
 
     # Validate UUID format
     import re
@@ -264,7 +272,7 @@ def target_tenant_login():
         re.IGNORECASE,
     ):
         flash("Target tenant ID must be a valid UUID.", "danger")
-        return redirect(_safe_redirect_back())
+        return redirect(url_for("main.dashboard"))
 
     session["target_tenant_state"] = str(uuid.uuid4())
     session["target_tenant_id"] = target_tenant_id
@@ -281,7 +289,12 @@ def target_tenant_login():
         redirect_uri=redirect_uri,
         state=session["target_tenant_state"],
     )
-    if not auth_url.startswith("https://login.microsoftonline.com/"):
+    # Validate redirect target: must be https to login.microsoftonline.com
+    parsed = urlparse(auth_url)
+    if parsed.scheme != "https" or not (
+        parsed.hostname == "login.microsoftonline.com"
+        or (parsed.hostname and parsed.hostname.endswith(".login.microsoftonline.com"))
+    ):
         flash("Invalid authentication URL.", "danger")
         return redirect(url_for("main.dashboard"))
     return redirect(auth_url)
@@ -372,6 +385,14 @@ def consent_graph():
         ),
         login_hint=session.get("user", {}).get("preferred_username", ""),
     )
+    # Validate redirect target: must be https to login.microsoftonline.com
+    parsed = urlparse(auth_url)
+    if parsed.scheme != "https" or not (
+        parsed.hostname == "login.microsoftonline.com"
+        or (parsed.hostname and parsed.hostname.endswith(".login.microsoftonline.com"))
+    ):
+        flash("Invalid authentication URL.", "danger")
+        return redirect(url_for("main.dashboard"))
     return redirect(auth_url)
 
 
