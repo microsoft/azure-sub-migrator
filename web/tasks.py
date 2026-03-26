@@ -37,7 +37,7 @@ from azure_sub_migrator.cross_sub import analyze_cross_sub_dependencies
 from azure_sub_migrator.logger import get_logger
 from azure_sub_migrator.post_transfer import run_post_transfer
 from azure_sub_migrator.pre_transfer import run_pre_transfer
-from azure_sub_migrator.rbac import export_rbac
+from azure_sub_migrator.rbac import export_rbac_data
 from azure_sub_migrator.readiness import check_readiness
 from azure_sub_migrator.scanner import list_subscriptions, scan_subscription
 
@@ -45,7 +45,8 @@ logger = get_logger("tasks")
 
 
 # Maximum age of a completed/failed task before it is evicted (seconds).
-TASK_TTL_SECONDS: int = 2 * 60 * 60  # 2 hours
+# Aligned with session idle timeout so task data doesn't outlive sessions.
+TASK_TTL_SECONDS: int = 30 * 60  # 30 minutes
 # Hard cap on total tasks to prevent memory exhaustion.
 MAX_TASKS: int = 500
 # Maximum time a task may run before being marked as failed (seconds).
@@ -444,6 +445,39 @@ def get_task(task_id: str, *, owner_id: str = "") -> TaskResult | None:
     return task
 
 
+def cleanup_user_tasks(owner_id: str) -> int:
+    """Delete all tasks belonging to a user (called on logout).
+
+    Removes matching tasks from both the in-memory store and Redis,
+    ensuring no customer data outlives the session.
+
+    Returns the number of tasks deleted.
+    """
+    if not owner_id:
+        return 0
+
+    to_delete: list[str] = []
+    with _tasks_lock:
+        for tid, task in _tasks.items():
+            if task.owner_id == owner_id:
+                to_delete.append(tid)
+        for tid in to_delete:
+            del _tasks[tid]
+
+    # Also purge from Redis
+    r = _get_redis()
+    if r is not None:
+        for tid in to_delete:
+            try:
+                r.delete(f"{_REDIS_PREFIX}{tid}")
+            except Exception:
+                logger.debug("Failed to delete Redis key for task %s", tid)
+
+    if to_delete:
+        logger.info("Cleaned up %d task(s) for user %s on logout", len(to_delete), owner_id)
+    return len(to_delete)
+
+
 def _store_task(task: TaskResult) -> None:
     """Insert a task into the store, evicting stale entries first."""
     _evict_stale_tasks()
@@ -589,17 +623,11 @@ def _run_rbac_export(task: TaskResult, access_token: str, subscription_id: str) 
     progress = _make_progress_callback(task)
     try:
         cred = _credential_from_token(access_token)
-        progress("Exporting RBAC assignments", 1, 3)
-        export_path = export_rbac(cred, subscription_id)
-        # Read the exported JSON to send back as the result
-        import json as _json
-        progress("Reading export data", 2, 3)
-        with open(export_path) as f:
-            export_data = _json.load(f)
-        progress("Complete", 3, 3)
+        progress("Exporting RBAC assignments", 1, 2)
+        export_data = export_rbac_data(cred, subscription_id)
+        progress("Complete", 2, 2)
         task.result = {
             "rbac_export": {
-                "file_path": str(export_path),
                 "role_assignments_count": len(export_data.get("role_assignments", [])),
                 "custom_roles_count": len(export_data.get("custom_roles", [])),
                 "managed_identities_count": len(export_data.get("managed_identities", [])),
@@ -607,7 +635,7 @@ def _run_rbac_export(task: TaskResult, access_token: str, subscription_id: str) 
             }
         }
         task.status = TaskStatus.COMPLETED
-        logger.info("RBAC export task %s completed → %s", task.task_id, export_path)
+        logger.info("RBAC export task %s completed (in-memory)", task.task_id)
     except Exception as exc:
         task.error = _sanitise_error(exc)
         task.status = TaskStatus.FAILED

@@ -164,6 +164,11 @@ def _enforce_idle_timeout():
         )
         last_dt = datetime.fromisoformat(last)
         if datetime.now(timezone.utc) - last_dt > idle_limit:
+            # Purge task data before clearing the session
+            user_oid = session.get("user", {}).get("oid", "")
+            if user_oid:
+                from web.tasks import cleanup_user_tasks
+                cleanup_user_tasks(user_oid)
             session.clear()
             return redirect(url_for("auth.login"))
 
@@ -205,7 +210,10 @@ def callback():
         return redirect(url_for("auth.login"))
 
     if "error" in request.args:
-        return f"Auth error: {escape(request.args.get('error_description', ''))}", 400
+        return render_template(
+            "error.html",
+            message=f"Authentication failed: {escape(request.args.get('error_description', 'Unknown error'))}",
+        ), 400
 
     cache = _load_cache()
     app = _build_msal_app(cache)
@@ -216,7 +224,10 @@ def callback():
     )
 
     if "error" in result:
-        return f"Token error: {result.get('error_description')}", 400
+        return render_template(
+            "error.html",
+            message="Authentication failed. Please try signing in again.",
+        ), 400
 
     # Persist the MSAL cache (stores refresh token for cross-resource use)
     _save_cache(cache)
@@ -233,7 +244,13 @@ def callback():
 
 @auth_bp.route("/logout")
 def logout():
-    """Clear the session and redirect to Microsoft logout."""
+    """Clear task data and session, then redirect to Microsoft logout."""
+    # Purge all task results belonging to this user from memory and Redis
+    user_oid = session.get("user", {}).get("oid", "")
+    if user_oid:
+        from web.tasks import cleanup_user_tasks
+        cleanup_user_tasks(user_oid)
+
     session.clear()
     authority = current_app.config["ENTRA_AUTHORITY"]
     return redirect(

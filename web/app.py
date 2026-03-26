@@ -162,7 +162,12 @@ def create_app() -> Flask:
     )
 
     # Entra ID / MSAL settings
-    app.config["ENTRA_CLIENT_ID"] = os.environ.get("ENTRA_CLIENT_ID", "")
+    client_id = os.environ.get("ENTRA_CLIENT_ID", "")
+    if not client_id and os.environ.get("WEBSITE_HOSTNAME"):
+        raise RuntimeError(
+            "ENTRA_CLIENT_ID must be set in App Service configuration"
+        )
+    app.config["ENTRA_CLIENT_ID"] = client_id
     app.config["ENTRA_REDIRECT_PATH"] = os.environ.get("ENTRA_REDIRECT_PATH", "/auth/callback")
     # Use 'organizations' so users from ANY Entra ID tenant can sign in
     app.config["ENTRA_AUTHORITY"] = "https://login.microsoftonline.com/organizations"
@@ -215,6 +220,18 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
+
+    # ── Error handlers ───────────────────────────────────────────────
+    @app.errorhandler(404)
+    def _handle_404(e):
+        from flask import render_template as _rt
+        return _rt("error.html", message="The page you requested does not exist."), 404
+
+    @app.errorhandler(500)
+    def _handle_500(e):
+        from flask import render_template as _rt
+        _log.exception("Unhandled server error")
+        return _rt("error.html", message="An internal error occurred. Please try again later."), 500
 
     # ── CSRF protection ──────────────────────────────────────────────
     csrf.init_app(app)
