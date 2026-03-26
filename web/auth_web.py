@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from functools import wraps
 from typing import Any
 
+from markupsafe import escape
+
 import msal
 from flask import (
     Blueprint,
@@ -194,7 +196,7 @@ def callback():
         return redirect(url_for("auth.login"))
 
     if "error" in request.args:
-        return f"Auth error: {request.args['error_description']}", 400
+        return f"Auth error: {escape(request.args.get('error_description', ''))}", 400
 
     cache = _load_cache()
     app = _build_msal_app(cache)

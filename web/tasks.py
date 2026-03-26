@@ -43,6 +43,11 @@ from azure_sub_migrator.scanner import list_subscriptions, scan_subscription
 
 logger = get_logger("tasks")
 
+
+def _sanitize_log(value: str) -> str:
+    """Strip control characters to prevent log injection."""
+    return value.replace("\n", "").replace("\r", "").replace("\t", "")
+
 # Maximum age of a completed/failed task before it is evicted (seconds).
 TASK_TTL_SECONDS: int = 2 * 60 * 60  # 2 hours
 # Hard cap on total tasks to prevent memory exhaustion.
@@ -303,7 +308,7 @@ def start_scan(access_token: str, subscription_id: str, *, owner_id: str = "") -
         daemon=True,
     )
     thread.start()
-    logger.info("Scan task %s started for subscription %s", task_id, subscription_id)
+    logger.info("Scan task %s started for subscription %s", task_id, _sanitize_log(subscription_id))
     return task_id
 
 
@@ -319,7 +324,7 @@ def start_readiness_check(access_token: str, subscription_id: str, *, owner_id: 
         daemon=True,
     )
     thread.start()
-    logger.info("Readiness task %s started for subscription %s", task_id, subscription_id)
+    logger.info("Readiness task %s started for subscription %s", task_id, _sanitize_log(subscription_id))
     return task_id
 
 
@@ -335,7 +340,7 @@ def start_rbac_export(access_token: str, subscription_id: str, *, owner_id: str 
         daemon=True,
     )
     thread.start()
-    logger.info("RBAC export task %s started for subscription %s", task_id, subscription_id)
+    logger.info("RBAC export task %s started for subscription %s", task_id, _sanitize_log(subscription_id))
     return task_id
 
 
@@ -361,7 +366,7 @@ def start_post_transfer(
         daemon=True,
     )
     thread.start()
-    logger.info("Post-transfer task %s started for subscription %s (dry_run=%s)", task_id, subscription_id, dry_run)
+    logger.info("Post-transfer task %s started for subscription %s (dry_run=%s)", task_id, _sanitize_log(subscription_id), dry_run)
     return task_id
 
 
@@ -407,7 +412,7 @@ def start_pre_transfer(
         daemon=True,
     )
     thread.start()
-    logger.info("Pre-transfer task %s started for subscription %s", task_id, subscription_id)
+    logger.info("Pre-transfer task %s started for subscription %s", task_id, _sanitize_log(subscription_id))
     return task_id
 
 
@@ -424,7 +429,7 @@ def get_task(task_id: str, *, owner_id: str = "") -> TaskResult | None:
     if owner_id and task.owner_id and task.owner_id != owner_id:
         logger.warning(
             "Task %s ownership mismatch: expected %s, got %s",
-            task_id, task.owner_id, owner_id,
+            task_id, _sanitize_log(task.owner_id), _sanitize_log(owner_id),
         )
         return None
     # Passive timeout check — fail tasks that have been running too long

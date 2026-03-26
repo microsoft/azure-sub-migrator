@@ -105,7 +105,7 @@ class TestScanSubscription:
         assert result["requires_action"][0]["pre_action"] != ""
         assert result["requires_action"][0]["post_action"] != ""
         assert "doc_url" in result["requires_action"][0]
-        assert "learn.microsoft.com" in result["requires_action"][0]["doc_url"]
+        assert result["requires_action"][0]["doc_url"].startswith("https://learn.microsoft.com/")
         assert "known impacted type" in result["requires_action"][0]["detection"]
 
         # Transfer notes are always included (tenant-level items only)
