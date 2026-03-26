@@ -366,7 +366,10 @@ def start_post_transfer(
         daemon=True,
     )
     thread.start()
-    logger.info("Post-transfer task %s started for subscription %s (dry_run=%s)", task_id, _sanitize_log(subscription_id), dry_run)
+    logger.info(
+        "Post-transfer task %s started for subscription %s (dry_run=%s)",
+        task_id, _sanitize_log(subscription_id), dry_run,
+    )
     return task_id
 
 

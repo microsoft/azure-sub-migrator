@@ -16,8 +16,6 @@ from datetime import datetime, timezone
 from functools import wraps
 from typing import Any
 
-from markupsafe import escape
-
 import msal
 from flask import (
     Blueprint,
@@ -29,6 +27,7 @@ from flask import (
     session,
     url_for,
 )
+from markupsafe import escape
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
