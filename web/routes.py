@@ -84,6 +84,18 @@ def healthz():
 
 
 # ──────────────────────────────────────────────────────────────────────
+# API: clear subscription-scoped workflow state (called from JS on sub change)
+# ──────────────────────────────────────────────────────────────────────
+
+@main_bp.route("/api/clear-workflow", methods=["POST"])
+@login_required
+def api_clear_workflow():
+    """Clear subscription-scoped session state when the user switches subscription."""
+    _clear_subscription_state()
+    return jsonify({"ok": True})
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Landing
 # ──────────────────────────────────────────────────────────────────────
 
