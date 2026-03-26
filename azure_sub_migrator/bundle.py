@@ -185,7 +185,10 @@ def read_bundle(data: bytes) -> dict[str, Any]:
                 if filename == "manifest.json":
                     continue
                 if filename not in ARTIFACT_FILES:
-                    logger.warning("Ignoring unknown file in bundle: %s", filename)
+                    logger.warning(
+                        "Ignoring unknown file in bundle: %s",
+                        filename.replace("\n", "").replace("\r", ""),
+                    )
                     continue
 
                 payload = zf.read(filename)

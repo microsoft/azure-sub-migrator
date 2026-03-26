@@ -77,7 +77,8 @@ def audit_log(
     if extra:
         record["extra"] = extra
 
-    _audit_logger.info(json.dumps(record, default=str))
+    safe_json = json.dumps(record, default=str).replace("\n", "").replace("\r", "")
+    _audit_logger.info(safe_json)
 
 
 def _client_ip() -> str:

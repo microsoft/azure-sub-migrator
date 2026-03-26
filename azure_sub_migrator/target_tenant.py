@@ -63,7 +63,10 @@ def build_target_auth_url(
         f"https://login.microsoftonline.com/{target_tenant_id}"
         f"/oauth2/v2.0/authorize?{params}"
     )
-    logger.info("Built target-tenant auth URL for tenant %s", target_tenant_id)
+    logger.info(
+        "Built target-tenant auth URL for tenant %s",
+        target_tenant_id.replace("\n", "").replace("\r", ""),
+    )
     return url
 
 

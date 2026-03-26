@@ -366,9 +366,10 @@ def start_post_transfer(
         daemon=True,
     )
     thread.start()
+    safe_sub = subscription_id.replace("\n", "").replace("\r", "")
     logger.info(
         "Post-transfer task %s started for subscription %s (dry_run=%s)",
-        task_id, _sanitize_log(subscription_id), dry_run,
+        task_id, safe_sub, dry_run,
     )
     return task_id
 
@@ -432,7 +433,9 @@ def get_task(task_id: str, *, owner_id: str = "") -> TaskResult | None:
     if owner_id and task.owner_id and task.owner_id != owner_id:
         logger.warning(
             "Task %s ownership mismatch: expected %s, got %s",
-            task_id, _sanitize_log(task.owner_id), _sanitize_log(owner_id),
+            task_id,
+            task.owner_id.replace("\n", "").replace("\r", ""),
+            owner_id.replace("\n", "").replace("\r", ""),
         )
         return None
     # Passive timeout check — fail tasks that have been running too long

@@ -51,7 +51,7 @@ class TestBuildTargetAuthUrl:
             state="s",
             scopes=["https://graph.microsoft.com/.default"],
         )
-        assert "graph.microsoft.com" in url
+        assert "https://graph.microsoft.com/" in url
 
 
 # ──────────────────────────────────────────────────────────────────────

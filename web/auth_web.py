@@ -15,6 +15,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from functools import wraps
 from typing import Any
+from urllib.parse import urlparse
 
 import msal
 from flask import (
@@ -30,6 +31,16 @@ from flask import (
 from markupsafe import escape
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+
+
+def _safe_redirect_back() -> str:
+    """Return the referrer only when it shares the same host, else dashboard."""
+    referrer = request.referrer
+    if referrer:
+        parsed = urlparse(referrer)
+        if not parsed.netloc or parsed.netloc == request.host:
+            return referrer
+    return url_for("main.dashboard")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -243,7 +254,7 @@ def target_tenant_login():
 
     if not target_tenant_id:
         flash("Target tenant ID is required.", "danger")
-        return redirect(request.referrer or url_for("main.dashboard"))
+        return redirect(_safe_redirect_back())
 
     # Validate UUID format
     import re
@@ -253,7 +264,7 @@ def target_tenant_login():
         re.IGNORECASE,
     ):
         flash("Target tenant ID must be a valid UUID.", "danger")
-        return redirect(request.referrer or url_for("main.dashboard"))
+        return redirect(_safe_redirect_back())
 
     session["target_tenant_state"] = str(uuid.uuid4())
     session["target_tenant_id"] = target_tenant_id
@@ -270,6 +281,9 @@ def target_tenant_login():
         redirect_uri=redirect_uri,
         state=session["target_tenant_state"],
     )
+    if not auth_url.startswith("https://login.microsoftonline.com/"):
+        flash("Invalid authentication URL.", "danger")
+        return redirect(url_for("main.dashboard"))
     return redirect(auth_url)
 
 
