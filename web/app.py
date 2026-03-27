@@ -44,7 +44,7 @@ def _build_redis_client(redis_host: str, redis_url: str):
 
         _retry = Retry(ExponentialBackoff(cap=5, base=0.25), retries=5)
         _common = dict(
-            decode_responses=True,
+            decode_responses=False,
             socket_connect_timeout=5,
             socket_timeout=5,
             retry_on_timeout=True,
