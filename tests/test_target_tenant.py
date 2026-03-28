@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from azure_sub_migrator.target_tenant import (
     build_target_auth_url,
@@ -29,10 +29,13 @@ class TestBuildTargetAuthUrl:
             redirect_uri="https://localhost/callback",
             state="some-state",
         )
-        assert "login.microsoftonline.com/tid-123" in url
-        assert "client_id=cid" in url
-        assert "state=some-state" in url
-        assert "response_type=code" in url
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        assert parsed.hostname == "login.microsoftonline.com"
+        assert "/tid-123" in parsed.path
+        assert qs["client_id"] == ["cid"]
+        assert qs["state"] == ["some-state"]
+        assert qs["response_type"] == ["code"]
 
     def test_default_scope(self):
         url = build_target_auth_url(
@@ -41,8 +44,11 @@ class TestBuildTargetAuthUrl:
             redirect_uri="https://localhost/cb",
             state="s",
         )
-        assert "management.azure.com" in url
-        assert "offline_access" in url
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        scope_value = qs.get("scope", [""])[0]
+        assert "management.azure.com" in scope_value
+        assert "offline_access" in scope_value
 
     def test_custom_scopes(self):
         url = build_target_auth_url(
@@ -53,8 +59,10 @@ class TestBuildTargetAuthUrl:
             scopes=["https://graph.microsoft.com/.default"],
         )
         parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
         assert parsed.hostname == "login.microsoftonline.com"
-        assert ".default" in parsed.query
+        scope_value = qs.get("scope", [""])[0]
+        assert ".default" in scope_value
 
 
 # ──────────────────────────────────────────────────────────────────────
