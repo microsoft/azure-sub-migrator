@@ -372,6 +372,15 @@ class TestApiStartPreTransfer:
 class TestApiStartPostTransfer:
     """Tests for POST /api/start-post-transfer."""
 
+    _BUNDLE = {
+        "scan_results": {"transfer_safe": [], "requires_action": []},
+        "rbac_assignments": [{"principalId": "old-p1", "roleDefinitionId": "rd1"}],
+        "policy_assignments": [{"id": "pa-1"}],
+        "policy_definitions": [{"id": "pd-1"}],
+        "resource_locks": [{"id": "lk-1"}],
+        "keyvault_policies": {"vaults": [{"name": "kv1"}]},
+    }
+
     def test_no_bundle(self, auth_client):
         resp = auth_client.post(
             "/api/start-post-transfer",
@@ -381,19 +390,70 @@ class TestApiStartPostTransfer:
         assert resp.status_code == 400
         assert "bundle" in resp.get_json()["error"].lower()
 
+    def test_requires_target_tenant(self, auth_client):
+        """Bug 3: Should reject when target tenant is not connected."""
+        with auth_client.session_transaction() as sess:
+            sess["bundle_artifacts"] = self._BUNDLE
+            # target_tenant_connected is NOT set
+        resp = auth_client.post(
+            "/api/start-post-transfer",
+            json={"mapping": {}},
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        assert "target tenant" in resp.get_json()["error"].lower()
+
+    def test_uses_target_token_not_source(self, auth_client):
+        """Bug 2: Must use target_access_token, not source get_access_token()."""
+        with auth_client.session_transaction() as sess:
+            sess["bundle_artifacts"] = self._BUNDLE
+            sess["target_tenant_connected"] = True
+            sess["target_access_token"] = "target-tenant-tok"
+            sess["access_token"] = "source-tenant-tok"  # must NOT be used
+
+        with patch("web.routes.start_post_transfer", return_value="post-1") as mock_start:
+            resp = auth_client.post(
+                "/api/start-post-transfer",
+                json={"mapping": {"old-id": "new-id"}},
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        # Verify target token was passed, not source token
+        call_kwargs = mock_start.call_args
+        assert call_kwargs.kwargs["access_token"] == "target-tenant-tok"
+
+    def test_passes_bundle_artifacts(self, auth_client):
+        """Bug 1: bundle_artifacts must be threaded through to the task."""
+        with auth_client.session_transaction() as sess:
+            sess["bundle_artifacts"] = self._BUNDLE
+            sess["target_tenant_connected"] = True
+            sess["target_access_token"] = "target-tok"
+
+        with patch("web.routes.start_post_transfer", return_value="post-1") as mock_start:
+            resp = auth_client.post(
+                "/api/start-post-transfer",
+                json={"mapping": {"old-id": "new-id"}, "dry_run": True},
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        call_kwargs = mock_start.call_args
+        passed_artifacts = call_kwargs.kwargs["bundle_artifacts"]
+        # Verify the full bundle was passed, including policy/lock/kv data
+        assert passed_artifacts["policy_assignments"] == [{"id": "pa-1"}]
+        assert passed_artifacts["resource_locks"] == [{"id": "lk-1"}]
+        assert passed_artifacts["keyvault_policies"]["vaults"] == [{"name": "kv1"}]
+
     def test_valid_post_transfer(self, auth_client):
         with auth_client.session_transaction() as sess:
-            sess["bundle_artifacts"] = {
-                "scan_results": {"transfer_safe": [], "requires_action": []},
-                "rbac_assignments": [],
-            }
-        with patch("web.routes.get_access_token", return_value="tok"):
-            with patch("web.routes.start_post_transfer", return_value="post-1"):
-                resp = auth_client.post(
-                    "/api/start-post-transfer",
-                    json={"mapping": {"old-id": "new-id"}, "dry_run": True},
-                    content_type="application/json",
-                )
+            sess["bundle_artifacts"] = self._BUNDLE
+            sess["target_tenant_connected"] = True
+            sess["target_access_token"] = "target-tok"
+        with patch("web.routes.start_post_transfer", return_value="post-1"):
+            resp = auth_client.post(
+                "/api/start-post-transfer",
+                json={"mapping": {"old-id": "new-id"}, "dry_run": True},
+                content_type="application/json",
+            )
         assert resp.status_code == 200
         assert resp.get_json()["task_id"] == "post-1"
 
@@ -612,4 +672,37 @@ class TestScanStatusPage:
         with patch("web.routes.get_task", return_value=None):
             resp = auth_client.get(f"/scan/{FAKE_TASK_ID}")
         assert resp.status_code == 404
+
+
+# ── start_post_transfer threading ────────────────────────────────────
+
+class TestStartPostTransferThread:
+    """Verify start_post_transfer passes bundle_artifacts to the thread."""
+
+    @patch("web.tasks.threading.Thread")
+    @patch("web.tasks._store_task")
+    def test_bundle_artifacts_reaches_thread(self, _mock_store, mock_thread_cls):
+        """Bug 1 regression: bundle_artifacts must be in thread kwargs."""
+        from web.tasks import start_post_transfer
+
+        mock_thread = mock_thread_cls.return_value
+        mock_thread.start = lambda: None
+
+        bundle = {"policy_assignments": [{"id": "pa-1"}], "resource_locks": []}
+
+        start_post_transfer(
+            access_token="tok",
+            subscription_id="sub-1",
+            scan_data={},
+            rbac_export=None,
+            principal_mapping={},
+            bundle_artifacts=bundle,
+            owner_id="owner",
+            dry_run=True,
+        )
+
+        call_kwargs = mock_thread_cls.call_args
+        thread_kwargs = call_kwargs.kwargs["kwargs"]
+        assert thread_kwargs["bundle_artifacts"] is bundle
+        assert thread_kwargs["dry_run"] is True
 
