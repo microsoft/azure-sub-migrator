@@ -188,13 +188,15 @@ def login():
         redirect_uri=request.url_root.rstrip("/") + current_app.config["ENTRA_REDIRECT_PATH"],
         prompt="select_account",  # always show account picker
     )
-    # Validate redirect target — strip backslashes, then verify no
-    # external netloc beyond our known-good host (prevents open redirect).
+    # Validate redirect target — parse the URL and check hostname against
+    # an explicit allowlist (prevents open redirect via subdomain spoofing).
     auth_url = auth_url.replace('\\', '')
     parsed = urlparse(auth_url)
-    if not parsed.netloc or not parsed.scheme:
-        return redirect(auth_url)
-    if parsed.scheme == "https" and parsed.netloc == "login.microsoftonline.com":
+    host = parsed.hostname or ""
+    if (
+        parsed.scheme == "https"
+        and host == "login.microsoftonline.com"
+    ):
         return redirect(auth_url)
     flash("Invalid authentication URL.", "danger")
     return redirect(url_for("main.dashboard"))
@@ -297,15 +299,15 @@ def target_tenant_login():
         redirect_uri=redirect_uri,
         state=session["target_tenant_state"],
     )
-    # Validate redirect target — strip backslashes, then verify no
-    # external netloc beyond our known-good host (prevents open redirect).
+    # Validate redirect target — parse the URL and check hostname against
+    # an explicit allowlist (prevents open redirect via subdomain spoofing).
     auth_url = auth_url.replace('\\', '')
     parsed = urlparse(auth_url)
-    if not parsed.netloc or not parsed.scheme:
-        # Relative URL — safe
-        return redirect(auth_url)
-    if parsed.scheme == "https" and parsed.netloc == "login.microsoftonline.com":
-        # Known-good external host — safe
+    host = parsed.hostname or ""
+    if (
+        parsed.scheme == "https"
+        and host == "login.microsoftonline.com"
+    ):
         return redirect(auth_url)
     flash("Invalid authentication URL.", "danger")
     return redirect(url_for("main.dashboard"))
@@ -400,13 +402,15 @@ def consent_graph():
         ),
         login_hint=session.get("user", {}).get("preferred_username", ""),
     )
-    # Validate redirect target — strip backslashes, then verify no
-    # external netloc beyond our known-good host (prevents open redirect).
+    # Validate redirect target — parse the URL and check hostname against
+    # an explicit allowlist (prevents open redirect via subdomain spoofing).
     auth_url = auth_url.replace('\\', '')
     parsed = urlparse(auth_url)
-    if not parsed.netloc or not parsed.scheme:
-        return redirect(auth_url)
-    if parsed.scheme == "https" and parsed.netloc == "login.microsoftonline.com":
+    host = parsed.hostname or ""
+    if (
+        parsed.scheme == "https"
+        and host == "login.microsoftonline.com"
+    ):
         return redirect(auth_url)
     flash("Invalid authentication URL.", "danger")
     return redirect(url_for("main.dashboard"))
