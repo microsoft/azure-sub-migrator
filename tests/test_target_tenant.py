@@ -46,9 +46,11 @@ class TestBuildTargetAuthUrl:
         )
         parsed = urlparse(url)
         qs = parse_qs(parsed.query)
-        scope_value = qs.get("scope", [""])[0]
-        assert "management.azure.com" in scope_value
-        assert "offline_access" in scope_value
+        scopes = qs.get("scope", [""])[0].split()
+        assert any(
+            s.startswith("https://management.azure.com/") for s in scopes
+        )
+        assert "offline_access" in scopes
 
     def test_custom_scopes(self):
         url = build_target_auth_url(
@@ -61,8 +63,8 @@ class TestBuildTargetAuthUrl:
         parsed = urlparse(url)
         qs = parse_qs(parsed.query)
         assert parsed.hostname == "login.microsoftonline.com"
-        scope_value = qs.get("scope", [""])[0]
-        assert ".default" in scope_value
+        scopes = qs.get("scope", [""])[0].split()
+        assert any(s.endswith("/.default") for s in scopes)
 
 
 # ──────────────────────────────────────────────────────────────────────
