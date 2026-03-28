@@ -748,7 +748,12 @@ def principal_mapping(task_id: str):
         if graph_token:
             resolve_source_principals(principals, graph_token)
         # Auto-suggest matches in target tenant (needs Graph token)
-        target_token = session.get("target_graph_token", "") or session.get("target_access_token", "") or graph_token or ""
+        target_token = (
+            session.get("target_graph_token", "")
+            or session.get("target_access_token", "")
+            or graph_token
+            or ""
+        )
         if target_token:
             suggest_mappings(principals, target_token)
 
