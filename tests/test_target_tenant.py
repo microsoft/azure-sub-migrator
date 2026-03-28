@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from azure_sub_migrator.target_tenant import (
     build_target_auth_url,
@@ -29,10 +29,13 @@ class TestBuildTargetAuthUrl:
             redirect_uri="https://localhost/callback",
             state="some-state",
         )
-        assert "login.microsoftonline.com/tid-123" in url
-        assert "client_id=cid" in url
-        assert "state=some-state" in url
-        assert "response_type=code" in url
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        assert parsed.hostname == "login.microsoftonline.com"
+        assert "/tid-123" in parsed.path
+        assert qs["client_id"] == ["cid"]
+        assert qs["state"] == ["some-state"]
+        assert qs["response_type"] == ["code"]
 
     def test_default_scope(self):
         url = build_target_auth_url(
@@ -41,8 +44,13 @@ class TestBuildTargetAuthUrl:
             redirect_uri="https://localhost/cb",
             state="s",
         )
-        assert "Directory.Read.All" in url
-        assert "User.Read" in url
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        scopes = qs.get("scope", [""])[0].split()
+        assert any(
+            s.startswith("https://management.azure.com/") for s in scopes
+        )
+        assert "offline_access" in scopes
 
     def test_custom_scopes(self):
         url = build_target_auth_url(
@@ -53,8 +61,10 @@ class TestBuildTargetAuthUrl:
             scopes=["https://graph.microsoft.com/.default"],
         )
         parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
         assert parsed.hostname == "login.microsoftonline.com"
-        assert ".default" in parsed.query
+        scopes = qs.get("scope", [""])[0].split()
+        assert any(s.endswith("/.default") for s in scopes)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -66,8 +76,12 @@ class TestRedeemTargetAuthCode:
     def test_success(self, mock_cca_cls):
         mock_app = MagicMock()
         mock_app.acquire_token_by_authorization_code.return_value = {
-            "access_token": "at-123",
+            "access_token": "arm-tok-123",
             "id_token_claims": {"preferred_username": "user@target.com"},
+        }
+        mock_app.get_accounts.return_value = [{"username": "user@target.com"}]
+        mock_app.acquire_token_silent.return_value = {
+            "access_token": "graph-tok-456",
         }
         mock_cca_cls.return_value = mock_app
 
@@ -79,7 +93,8 @@ class TestRedeemTargetAuthCode:
             redirect_uri="https://localhost/cb",
         )
 
-        assert result["access_token"] == "at-123"
+        assert result["access_token"] == "arm-tok-123"
+        assert result["graph_token"] == "graph-tok-456"
         mock_cca_cls.assert_called_once_with(
             client_id="cid",
             client_credential="secret",

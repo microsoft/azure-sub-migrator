@@ -392,7 +392,7 @@ def api_get_principal_mapping():
         return jsonify({"principals": [], "has_rbac": False})
 
     # Require target tenant connection
-    target_token = session.get("target_access_token", "")
+    target_token = session.get("target_graph_token", "") or session.get("target_access_token", "")
     if not target_token:
         return jsonify({
             "has_rbac": True,
@@ -471,6 +471,9 @@ def api_start_post_transfer():
     if not bundle_artifacts:
         return jsonify({"error": "No bundle uploaded."}), 400
 
+    if not session.get("target_tenant_connected"):
+        return jsonify({"error": "Please connect to the target tenant first."}), 400
+
     data = request.get_json(silent=True) or {}
     mapping = data.get("mapping", {})
     dry_run = data.get("dry_run", False)
@@ -480,7 +483,7 @@ def api_start_post_transfer():
     rbac_assignments = bundle_artifacts.get("rbac_assignments", [])
     rbac_export = {"role_assignments": rbac_assignments} if rbac_assignments else None
 
-    token = get_access_token()
+    token = session.get("target_access_token", "")
     subscription_id = session.get("last_scan_sub", "")
 
     session["principal_mapping"] = mapping
@@ -491,6 +494,7 @@ def api_start_post_transfer():
         scan_data=scan_data,
         rbac_export=rbac_export,
         principal_mapping=mapping,
+        bundle_artifacts=bundle_artifacts,
         owner_id=_get_owner_id(),
         dry_run=dry_run,
     )
@@ -743,8 +747,13 @@ def principal_mapping(task_id: str):
         graph_token = get_graph_token()
         if graph_token:
             resolve_source_principals(principals, graph_token)
-        # Auto-suggest matches in target tenant
-        target_token = session.get("target_access_token", "") or graph_token or ""
+        # Auto-suggest matches in target tenant (needs Graph token)
+        target_token = (
+            session.get("target_graph_token", "")
+            or session.get("target_access_token", "")
+            or graph_token
+            or ""
+        )
         if target_token:
             suggest_mappings(principals, target_token)
 
@@ -797,6 +806,7 @@ def save_principal_mapping(task_id: str):
         scan_data=task.result,
         rbac_export=rbac_export,
         principal_mapping=mapping,
+        bundle_artifacts=session.get("bundle_artifacts", {}),
         owner_id=_get_owner_id(),
     )
 

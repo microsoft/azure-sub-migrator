@@ -248,3 +248,58 @@ class TestRunPostTransfer:
             mock_credential, "sub-1", scan_data, rbac_export, {},
         )
         assert result["overall_status"] == "succeeded"
+
+    @patch("azure_sub_migrator.post_transfer._restore_keyvault_from_snapshot")
+    @patch("azure_sub_migrator.post_transfer._restore_resource_locks")
+    @patch("azure_sub_migrator.post_transfer._restore_policy_definitions")
+    @patch("azure_sub_migrator.post_transfer._restore_policy_assignments")
+    def test_bundle_artifacts_triggers_operations_6_through_9(
+        self,
+        mock_policies,
+        mock_policy_defs,
+        mock_locks,
+        mock_kv_snap,
+        mock_credential,
+    ):
+        """Operations 6-9 must execute when bundle_artifacts has data."""
+        mock_policies.return_value = {"operation": "PolicyAssign", "status": "succeeded"}
+        mock_policy_defs.return_value = {"operation": "PolicyDef", "status": "succeeded"}
+        mock_locks.return_value = {"operation": "Locks", "status": "succeeded"}
+        mock_kv_snap.return_value = {"operation": "KVSnapshot", "status": "succeeded"}
+
+        scan_data = {"requires_action": []}
+        bundle = {
+            "policy_assignments": [{"id": "/sub/providers/Microsoft.Authorization/pa1"}],
+            "policy_definitions": [{"id": "/sub/providers/Microsoft.Authorization/pd1"}],
+            "resource_locks": [{"id": "/sub/providers/Microsoft.Authorization/locks/lk1"}],
+            "keyvault_policies": {"vaults": [{"name": "kv1", "access_policies": []}]},
+        }
+
+        result = run_post_transfer(
+            mock_credential, "sub-1", scan_data, None, {},
+            bundle_artifacts=bundle,
+        )
+
+        mock_policies.assert_called_once()
+        mock_policy_defs.assert_called_once()
+        mock_locks.assert_called_once()
+        mock_kv_snap.assert_called_once()
+        assert result["summary"]["total"] == 4
+        assert result["summary"]["succeeded"] == 4
+
+    @patch("azure_sub_migrator.post_transfer._restore_policy_assignments")
+    def test_no_bundle_artifacts_skips_operations_6_through_9(
+        self,
+        mock_policies,
+        mock_credential,
+    ):
+        """Operations 6-9 must be skipped when bundle_artifacts is empty."""
+        scan_data = {"requires_action": []}
+
+        result = run_post_transfer(
+            mock_credential, "sub-1", scan_data, None, {},
+            bundle_artifacts={},
+        )
+
+        mock_policies.assert_not_called()
+        assert result["summary"]["total"] == 0

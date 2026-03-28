@@ -42,11 +42,15 @@ def build_target_auth_url(
     Rather than building a full MSAL ConfidentialClientApplication
     (which needs the client credential), we construct the URL directly
     since we only need the auth-code leg here.
+
+    The default scopes request ARM (management.azure.com) access for
+    post-transfer operations plus offline_access so the refresh token
+    can be used to silently acquire Graph tokens for principal mapping.
     """
     if scopes is None:
         scopes = [
-            "https://graph.microsoft.com/Directory.Read.All",
-            "https://graph.microsoft.com/User.Read",
+            "https://management.azure.com/user_impersonation",
+            "offline_access",
         ]
 
     scope_str = " ".join(scopes)
@@ -79,14 +83,16 @@ def redeem_target_auth_code(
 ) -> dict[str, Any]:
     """Exchange the authorization code for tokens using MSAL.
 
-    Returns the full MSAL result dict (access_token, id_token_claims, etc.).
+    Returns a dict with ``access_token`` (ARM), ``graph_token`` (Graph),
+    ``id_token_claims``, etc.  The auth code is redeemed for ARM scope
+    first; then a silent acquisition using the refresh token fetches a
+    Graph token for principal mapping.
     """
     import msal
 
     if scopes is None:
         scopes = [
-            "https://graph.microsoft.com/Directory.Read.All",
-            "https://graph.microsoft.com/User.Read",
+            "https://management.azure.com/user_impersonation",
         ]
 
     authority = f"https://login.microsoftonline.com/{target_tenant_id}"
@@ -109,10 +115,29 @@ def redeem_target_auth_code(
     else:
         claims = result.get("id_token_claims", {})
         logger.info(
-            "Target-tenant token acquired for user %s in tenant %s",
+            "Target-tenant ARM token acquired for user %s in tenant %s",
             claims.get("preferred_username", "?"),
             target_tenant_id,
         )
+
+        # Silently acquire a Graph token using the refresh token from
+        # the ARM code redemption.  This avoids a second interactive login.
+        accounts = app.get_accounts()
+        if accounts:
+            graph_result = app.acquire_token_silent(
+                scopes=["https://graph.microsoft.com/Directory.Read.All",
+                        "https://graph.microsoft.com/User.Read"],
+                account=accounts[0],
+            )
+            if graph_result and "access_token" in graph_result:
+                result["graph_token"] = graph_result["access_token"]
+                logger.info("Target-tenant Graph token acquired silently")
+            else:
+                logger.warning(
+                    "Could not silently acquire Graph token: %s",
+                    (graph_result or {}).get("error", "no accounts"),
+                )
+
     return result
 
 

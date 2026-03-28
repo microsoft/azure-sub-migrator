@@ -351,6 +351,7 @@ def start_post_transfer(
     rbac_export: dict[str, Any] | None,
     principal_mapping: dict[str, str],
     *,
+    bundle_artifacts: dict[str, Any] | None = None,
     owner_id: str = "",
     dry_run: bool = False,
 ) -> str:
@@ -362,7 +363,7 @@ def start_post_transfer(
     thread = threading.Thread(
         target=_run_post_transfer,
         args=(task, access_token, subscription_id, scan_data, rbac_export, principal_mapping),
-        kwargs={"dry_run": dry_run},
+        kwargs={"dry_run": dry_run, "bundle_artifacts": bundle_artifacts},
         daemon=True,
     )
     thread.start()
