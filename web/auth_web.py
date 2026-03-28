@@ -348,9 +348,13 @@ def target_tenant_callback():
         )
         return redirect(url_for("main.dashboard"))
 
-    # Store the target tenant token and identity separately
+    # Store the target tenant tokens and identity separately.
+    # access_token = ARM (management.azure.com) for post-transfer operations.
+    # target_graph_token = Graph for principal mapping (may be absent if
+    # silent acquisition failed — principal mapping will degrade gracefully).
     claims = result.get("id_token_claims", {})
-    session["target_access_token"] = result.get("access_token")
+    session["target_access_token"] = result.get("access_token")     # ARM token
+    session["target_graph_token"] = result.get("graph_token", "")   # Graph token
     session["target_tenant_user"] = {
         "name": claims.get("name", ""),
         "preferred_username": claims.get("preferred_username", ""),

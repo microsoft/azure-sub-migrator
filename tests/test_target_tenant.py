@@ -41,8 +41,8 @@ class TestBuildTargetAuthUrl:
             redirect_uri="https://localhost/cb",
             state="s",
         )
-        assert "Directory.Read.All" in url
-        assert "User.Read" in url
+        assert "management.azure.com" in url
+        assert "offline_access" in url
 
     def test_custom_scopes(self):
         url = build_target_auth_url(
@@ -66,8 +66,12 @@ class TestRedeemTargetAuthCode:
     def test_success(self, mock_cca_cls):
         mock_app = MagicMock()
         mock_app.acquire_token_by_authorization_code.return_value = {
-            "access_token": "at-123",
+            "access_token": "arm-tok-123",
             "id_token_claims": {"preferred_username": "user@target.com"},
+        }
+        mock_app.get_accounts.return_value = [{"username": "user@target.com"}]
+        mock_app.acquire_token_silent.return_value = {
+            "access_token": "graph-tok-456",
         }
         mock_cca_cls.return_value = mock_app
 
@@ -79,7 +83,8 @@ class TestRedeemTargetAuthCode:
             redirect_uri="https://localhost/cb",
         )
 
-        assert result["access_token"] == "at-123"
+        assert result["access_token"] == "arm-tok-123"
+        assert result["graph_token"] == "graph-tok-456"
         mock_cca_cls.assert_called_once_with(
             client_id="cid",
             client_credential="secret",
