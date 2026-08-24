@@ -47,8 +47,8 @@ dependencies = [
     "flask-limiter~=4.1",
     "flask-session~=0.8",
     "msal~=1.35",
-    "cryptography~=50.0",
-    "gunicorn~=25.1",
+    "cryptography>=50.0,<51.0",
+    "gunicorn>=25.1,<27.0",
     "redis~=7.4",
     "fpdf2~=2.8",
     "openpyxl~=3.1",
@@ -61,7 +61,7 @@ dev = [
     "pytest-cov~=7.0",
     "pytest-mock~=3.15",
     "ruff~=0.15",
-    "mypy~=1.19",
+    "mypy>=1.19,<3.0",
 ]
 
 [project.scripts]
