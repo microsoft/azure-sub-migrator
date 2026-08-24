@@ -29,7 +29,7 @@ flask-wtf~=1.2
 flask-limiter~=4.1
 flask-session~=0.8
 msal~=1.35
-cryptography~=46.0
+cryptography~=50.0
 gunicorn~=25.1
 redis~=7.4
 
