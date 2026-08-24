@@ -21,7 +21,7 @@ tenacity~=9.1
 # Reports
 fpdf2~=2.8
 openpyxl~=3.1
-pillow~=12.1
+pillow~=12.2
 
 # Web UI
 flask~=3.1
